@@ -1,0 +1,34 @@
+node_modules/
+
+# Build outputs
+dist/
+.electron-build/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+
+# Tooling caches
+.vite/
+.cache/
+.eslintcache
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# IDE/editor
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini

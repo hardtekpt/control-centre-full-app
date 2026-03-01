@@ -1,0 +1,61 @@
+{
+  "name": "control-centre-full-app",
+  "version": "0.1.0",
+  "description": "Electron + React tray flyout for Arctis Nova + Sonar control",
+  "main": ".electron-build/electron/main.js",
+  "author": "local",
+  "license": "MIT",
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:electron:watch\" \"npm:dev:electron\"",
+    "dev:renderer": "vite",
+    "dev:electron:watch": "tsc -p tsconfig.electron.json --watch --preserveWatchOutput",
+    "dev:electron": "wait-on tcp:5173 .electron-build/electron/main.js && node scripts/dev-electron.cjs",
+    "build": "npm run build:renderer && npm run build:electron && electron-builder",
+    "build:renderer": "vite build",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hensm/ddcci": "file:vendor/node-ddcci",
+    "node-hid": "^3.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/react": "^18.3.14",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "^34.0.0",
+    "electron-builder": "^25.1.8",
+    "sass": "^1.83.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "com.control.centre",
+    "productName": "Control Centre",
+    "asarUnpack": [
+      "scripts/**",
+      "vendor/**"
+    ],
+    "files": [
+      "dist/**",
+      ".electron-build/**",
+      "electron/assets/**",
+      "scripts/**",
+      "vendor/**",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "signAndEditExecutable": false
+    },
+    "directories": {
+      "buildResources": "build"
+    }
+  }
+}

@@ -1,0 +1,49 @@
+:root {
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  --ui-scale: 1;
+  --system-accent-color: #6ab7ff;
+  --system-accent-light: #9cd1ff;
+  --system-accent-medium: #318ce7;
+  --system-accent-dark: #16579b;
+  --system-accent-dark1: #2f7fcc;
+  --system-accent-dark2: #226cb3;
+  --system-accent-light2: #8dc8ff;
+
+  --slider-track-color: rgba(0, 0, 0, 0.42);
+  --slider-thumb-border: #ffffff;
+  --slider-thumb-fill: var(--system-accent-medium);
+  --slider-thumb-ring: rgb(255 255 255 / 40%);
+  --slider-thumb-shadow: rgb(0 0 0 / 60%);
+  --tray-background-base: #e4e4e4;
+  --tray-background: var(--tray-background-base);
+  --tray-text: #000000;
+  --tray-border: #aaaaaa;
+  --page-section-bg: rgba(255, 255, 255, 0.65);
+  --button-background: #ffffffc4;
+  --button-highlight: #fffffffa;
+  --button-border: #5c5c5c2b;
+}
+
+:root[data-theme="light"] {
+  --tray-background: #f2f2f2;
+  --tray-text: #000;
+  --tray-border: #cfcfcf;
+  --page-section-bg: #ffffff98;
+  --slider-track-color: #868686;
+}
+
+:root[data-theme="dark"] {
+  --tray-background-base: #1f1f1f;
+  --tray-background: #242424;
+  --tray-text: #ffffff;
+  --tray-border: #434343;
+  --page-section-bg: #ffffff0a;
+  --slider-track-color: #9b9b9b;
+  --slider-thumb-border: #414141;
+  --slider-thumb-fill: var(--system-accent-medium);
+  --slider-thumb-ring: rgb(255 255 255 / 24%);
+  --slider-thumb-shadow: rgb(0 0 0 / 72%);
+  --button-background: #8a8a8a2b;
+  --button-highlight: #b1b1b123;
+  --button-border: #9797972b;
+}
