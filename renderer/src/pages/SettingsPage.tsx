@@ -22,6 +22,7 @@ interface SettingsProps {
 const NOTIFICATION_LABELS: Array<{ key: NotificationKey; label: string }> = [
   { key: "appInfo", label: "Main App Info (Startup/Errors)" },
   { key: "connectivity", label: "Connectivity OSD Indicator" },
+  { key: "usbInput", label: "USB Input Selected OSD" },
   { key: "ancMode", label: "ANC OSD Indicator" },
   { key: "oled", label: "OLED Brightness" },
   { key: "sidetone", label: "Sidetone" },
@@ -140,6 +141,13 @@ export default function SettingsPage({
         {tab === "ggSonar" && (
           <>
             <h3>GG Sonar Settings</h3>
+            <label className="form-row">
+              <span>PC USB input</span>
+              <select value={settings.pcUsbInput} onChange={(e) => onUpdate({ pcUsbInput: e.currentTarget.value === "2" ? 2 : 1 })}>
+                <option value="1">USB Input 1</option>
+                <option value="2">USB Input 2</option>
+              </select>
+            </label>
             <div className="visible-channels">
               <div className="visible-title">Visible Sonar Channels</div>
               <div className="visible-grid">

@@ -11,6 +11,7 @@ export type ChannelKey = (typeof CHANNELS)[number];
 
 export type NotificationKey =
   | "connectivity"
+  | "usbInput"
   | "ancMode"
   | "oled"
   | "sidetone"
@@ -24,6 +25,8 @@ export type NotificationKey =
 export interface AppState {
   headset_battery_percent: number | null;
   base_battery_percent: number | null;
+  base_station_connected: boolean | null;
+  current_usb_input: 1 | 2 | null;
   headset_volume_percent: number | null;
   anc_mode: string | null;
   mic_mute: boolean | null;
@@ -45,6 +48,7 @@ export interface UiSettings {
   accentColor: string;
   textScale: number;
   useActiveDisplay: boolean;
+  pcUsbInput: 1 | 2;
   showBatteryPercent: boolean;
   notificationTimeout: number;
   batteryLowThreshold: number;

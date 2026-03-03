@@ -22,6 +22,8 @@ function IconSidetone() {
 
 export default function StatusCard({ state }: { state: AppState }) {
   const sidetone = state.sidetone_level == null ? "N/A" : SIDETONE_LABELS[state.sidetone_level] ?? String(state.sidetone_level);
+  const baseStation = state.base_station_connected == null ? "N/A" : state.base_station_connected ? "Connected" : "Disconnected";
+  const usbInput = state.current_usb_input == null ? "N/A" : String(state.current_usb_input);
   return (
     <section className="card status-card">
       <div className="status-compact-grid">
@@ -35,6 +37,12 @@ export default function StatusCard({ state }: { state: AppState }) {
           </div>
           <div className="status-item">
             <IconSidetone /> Sidetone: {sidetone}
+          </div>
+          <div className="status-item">
+            <span className="status-icon">&#xE7F4;</span> Base: {baseStation}
+          </div>
+          <div className="status-item">
+            <span className="status-icon">&#xEC4E;</span> USB Input: {usbInput}
           </div>
         </div>
         <div className="status-block">

@@ -27,6 +27,7 @@ export type BaseStationSnapshot = Pick<
   AppState,
   | "headset_battery_percent"
   | "base_battery_percent"
+  | "base_station_connected"
   | "headset_volume_percent"
   | "anc_mode"
   | "mic_mute"
@@ -47,6 +48,7 @@ export class BaseStationEventListener {
   private snapshot: BaseStationSnapshot = {
     headset_battery_percent: null,
     base_battery_percent: null,
+    base_station_connected: null,
     headset_volume_percent: null,
     anc_mode: null,
     mic_mute: null,
@@ -92,11 +94,18 @@ export class BaseStationEventListener {
     if (!this.hid) {
       return;
     }
-    if (this.devices.length === 0) {
-      const now = Date.now();
-      if (now - this.lastDiscoverAt > 1500) {
-        this.discoverDevices();
+    const now = Date.now();
+    if (now - this.lastDiscoverAt > 1500) {
+      this.lastDiscoverAt = now;
+      const candidates = this.listCandidates();
+      if (candidates.length === 0) {
+        this.closeDevices();
+        this.updateBaseStationConnected(false);
+        return;
       }
+    }
+    if (this.devices.length === 0) {
+      this.discoverDevices();
       return;
     }
     const mergedPatch: Partial<BaseStationSnapshot> = {};
@@ -125,19 +134,10 @@ export class BaseStationEventListener {
       return;
     }
     try {
-      const candidates = this.hid
-        .devices()
-        .filter(
-          (row) =>
-            row.vendorId === STEELSERIES_VENDOR_ID &&
-            SUPPORTED_PRODUCT_IDS.has(Number(row.productId)) &&
-            Number(row.interface) === INTERFACE_NUMBER &&
-            typeof row.path === "string" &&
-            row.path.trim().length > 0,
-        )
-        .sort((a, b) => String(a.path).localeCompare(String(b.path)));
+      const candidates = this.listCandidates();
       if (candidates.length === 0) {
         this.closeDevices();
+        this.updateBaseStationConnected(false);
         return;
       }
       const pathA = String(candidates[0].path);
@@ -152,9 +152,32 @@ export class BaseStationEventListener {
         this.devices.push(new this.hid.HID(p));
         opened.add(p);
       }
+      this.updateBaseStationConnected(this.devices.length > 0);
     } catch (err) {
       this.closeDevices();
+      this.updateBaseStationConnected(false);
       this.onError(this.errorText(err));
+    }
+  }
+
+  private listCandidates(): HidDeviceInfo[] {
+    if (!this.hid) {
+      return [];
+    }
+    try {
+      return this.hid
+        .devices()
+        .filter(
+          (row) =>
+            row.vendorId === STEELSERIES_VENDOR_ID &&
+            SUPPORTED_PRODUCT_IDS.has(Number(row.productId)) &&
+            Number(row.interface) === INTERFACE_NUMBER &&
+            typeof row.path === "string" &&
+            row.path.trim().length > 0,
+        )
+        .sort((a, b) => String(a.path).localeCompare(String(b.path)));
+    } catch {
+      return [];
     }
   }
 
@@ -169,6 +192,14 @@ export class BaseStationEventListener {
     this.devices = [];
   }
 
+  private updateBaseStationConnected(connected: boolean): void {
+    if (this.snapshot.base_station_connected === connected) {
+      return;
+    }
+    this.snapshot.base_station_connected = connected;
+    this.onPatch({ base_station_connected: connected });
+  }
+
   private safeRead(device: HidHandle, timeoutMs: number): number[] {
     try {
       const data = device.readTimeout(timeoutMs);
@@ -176,6 +207,7 @@ export class BaseStationEventListener {
     } catch (err) {
       this.onError(this.errorText(err));
       this.closeDevices();
+      this.updateBaseStationConnected(false);
       return [];
     }
   }

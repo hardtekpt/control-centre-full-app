@@ -20,6 +20,9 @@ let headsetChatMixPendingValue: number | null = null;
 let micMuteNotificationWindow: BrowserWindow | null = null;
 let micMuteNotificationTimer: NodeJS.Timeout | null = null;
 let micMutePendingValue: boolean | null = null;
+let usbInputNotificationWindow: BrowserWindow | null = null;
+let usbInputNotificationTimer: NodeJS.Timeout | null = null;
+let usbInputPendingValue: 1 | 2 | null = null;
 let ancModeNotificationWindow: BrowserWindow | null = null;
 let ancModeNotificationTimer: NodeJS.Timeout | null = null;
 let ancModePendingValue: AncNotificationMode | null = null;
@@ -58,6 +61,7 @@ interface HeadsetBatterySwapNotificationPayload {
 type OsdLayout = { displayId: number; x: number; y: number; width: number; height: number; uiScale: number };
 let headsetVolumeOsdLayout: OsdLayout | null = null;
 let micMuteOsdLayout: OsdLayout | null = null;
+let usbInputOsdLayout: OsdLayout | null = null;
 let ancModeOsdLayout: OsdLayout | null = null;
 let connectivityOsdLayout: OsdLayout | null = null;
 let batteryLowOsdLayout: OsdLayout | null = null;
@@ -98,6 +102,7 @@ const HEADSET_VOLUME_OSD_BASE_HEIGHT_DOUBLE = 70;
 const MIC_MUTE_OSD_BASE_SIZE = 62;
 const MIC_MUTE_LIVE_ACCENT = "#3fcf8e";
 const MIC_MUTE_MUTED_ACCENT = "#ef5350";
+const USB_INPUT_OSD_BASE_SIZE = 102;
 const ANC_MODE_OSD_BASE_SIZE = 62;
 const ANC_MODE_ON_ACCENT = "#3fcf8e";
 const ANC_MODE_OFF_ACCENT = "#ef5350";
@@ -447,6 +452,13 @@ function clearMicMuteNotificationTimer(): void {
   }
 }
 
+function clearUsbInputNotificationTimer(): void {
+  if (usbInputNotificationTimer) {
+    clearTimeout(usbInputNotificationTimer);
+    usbInputNotificationTimer = null;
+  }
+}
+
 function clearAncModeNotificationTimer(): void {
   if (ancModeNotificationTimer) {
     clearTimeout(ancModeNotificationTimer);
@@ -504,6 +516,16 @@ function scheduleMicMuteNotificationClose(win: BrowserWindow): void {
   clearMicMuteNotificationTimer();
   micMuteNotificationTimer = setTimeout(() => {
     micMuteNotificationTimer = null;
+    if (!win.isDestroyed()) {
+      win.close();
+    }
+  }, Math.max(2, settings.notificationTimeout) * 1000);
+}
+
+function scheduleUsbInputNotificationClose(win: BrowserWindow): void {
+  clearUsbInputNotificationTimer();
+  usbInputNotificationTimer = setTimeout(() => {
+    usbInputNotificationTimer = null;
     if (!win.isDestroyed()) {
       win.close();
     }
@@ -576,6 +598,21 @@ function resolveUiDisplay(): Electron.Display {
   }
   const cursorPoint = electronScreen.getCursorScreenPoint();
   return electronScreen.getDisplayNearestPoint(cursorPoint);
+}
+
+function resolveConfiguredPcUsbInput(): 1 | 2 {
+  return settings.pcUsbInput === 2 ? 2 : 1;
+}
+
+function inferCurrentUsbInput(baseStationConnected: boolean | null): 1 | 2 | null {
+  if (baseStationConnected == null) {
+    return null;
+  }
+  const pcUsb = resolveConfiguredPcUsbInput();
+  if (baseStationConnected) {
+    return pcUsb;
+  }
+  return pcUsb === 1 ? 2 : 1;
 }
 
 function resolveHeadsetVolumeOsdLayout(showChatMix: boolean): OsdLayout {
@@ -657,6 +694,24 @@ function resolveBatteryLowOsdLayout(): OsdLayout {
   const workArea = display.workArea;
   const resolutionScale = clampNumber(Math.min(workArea.width / 1920, workArea.height / 1080), 0.82, 1.18);
   const size = Math.max(88, Math.round(BATTERY_LOW_OSD_BASE_SIZE * resolutionScale));
+  const margin = Math.max(10, Math.round(12 * resolutionScale));
+  const x = Math.round(workArea.x + (workArea.width - size) / 2);
+  const y = workArea.y + workArea.height - size - margin;
+  return {
+    displayId: display.id,
+    x,
+    y,
+    width: size,
+    height: size,
+    uiScale: resolutionScale,
+  };
+}
+
+function resolveUsbInputOsdLayout(): OsdLayout {
+  const display = resolveUiDisplay();
+  const workArea = display.workArea;
+  const resolutionScale = clampNumber(Math.min(workArea.width / 1920, workArea.height / 1080), 0.82, 1.18);
+  const size = Math.max(86, Math.round(USB_INPUT_OSD_BASE_SIZE * resolutionScale));
   const margin = Math.max(10, Math.round(12 * resolutionScale));
   const x = Math.round(workArea.x + (workArea.width - size) / 2);
   const y = workArea.y + workArea.height - size - margin;
@@ -770,6 +825,17 @@ function toNullablePercent(value: number | null | undefined): number | null {
     return null;
   }
   return clampPercent(value);
+}
+
+function applyUsbInputInference(state: AppState): AppState {
+  const inferred = inferCurrentUsbInput(state.base_station_connected);
+  if (state.current_usb_input === inferred) {
+    return state;
+  }
+  return {
+    ...state,
+    current_usb_input: inferred,
+  };
 }
 
 function toOsdValueLabel(value: number | null): string {
@@ -1261,6 +1327,230 @@ async function showMicMuteNotification(muted: boolean): Promise<void> {
     micMutePendingValue = null;
     micMuteOsdLayout = null;
     clearMicMuteNotificationTimer();
+  });
+}
+
+function updateUsbInputNotificationScale(win: BrowserWindow, uiScale: number): void {
+  const scale = clampNumber(uiScale, 0.75, 1.5).toFixed(4);
+  void win.webContents
+    .executeJavaScript(`window.__setUsbInputScale?.(${scale});`, true)
+    .catch(() => undefined);
+}
+
+function updateUsbInputNotificationPalette(win: BrowserWindow, palette: { panelBg: string; textColor: string }, accent: string): void {
+  const safeBg = String(palette.panelBg || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const safeText = String(palette.textColor || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const safeAccent = String(accent || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  if (!safeBg || !safeText || !safeAccent) {
+    return;
+  }
+  void win.webContents
+    .executeJavaScript(`window.__setUsbInputPalette?.('${safeBg}','${safeText}','${safeAccent}');`, true)
+    .catch(() => undefined);
+}
+
+function updateUsbInputNotificationUi(win: BrowserWindow, input: 1 | 2): void {
+  const safeInput = input === 2 ? 2 : 1;
+  void win.webContents
+    .executeJavaScript(`window.__setUsbInputState?.(${safeInput});`, true)
+    .catch(() => undefined);
+}
+
+function applyUsbInputOsdLayout(win: BrowserWindow, layout: OsdLayout): void {
+  win.setMinimumSize(layout.width, layout.height);
+  win.setMaximumSize(layout.width, layout.height);
+  const bounds = win.getBounds();
+  if (bounds.x !== layout.x || bounds.y !== layout.y || bounds.width !== layout.width || bounds.height !== layout.height) {
+    win.setBounds(
+      {
+        x: layout.x,
+        y: layout.y,
+        width: layout.width,
+        height: layout.height,
+      },
+      false,
+    );
+  }
+  updateUsbInputNotificationScale(win, layout.uiScale);
+}
+
+async function showUsbInputNotification(input: 1 | 2): Promise<void> {
+  const selected = input === 2 ? 2 : 1;
+  usbInputPendingValue = selected;
+  const nextLayout = resolveUsbInputOsdLayout();
+  const theme = await getThemePayload();
+  const palette = resolveHeadsetVolumeNotificationPalette(theme);
+  const accent = settings.accentColor.trim() || theme.accent;
+  const html = `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data:;" />
+      <style>
+        :root {
+          color-scheme: dark;
+          --s: ${nextLayout.uiScale.toFixed(4)};
+          --panel-bg: ${palette.panelBg};
+          --text-color: ${palette.textColor};
+          --accent: ${accent};
+        }
+        html, body {
+          margin: 0;
+          width: 100%;
+          height: 100%;
+          background: transparent;
+          overflow: hidden;
+          font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+        }
+        .shell {
+          width: 100%;
+          height: 100%;
+          box-sizing: border-box;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.14);
+          background: var(--panel-bg);
+          box-shadow: 0 8px 18px rgba(0,0,0,0.38);
+          display: grid;
+          place-items: center;
+          padding: calc(8px * var(--s));
+        }
+        .stack {
+          display: grid;
+          justify-items: center;
+          align-content: center;
+          row-gap: calc(2px * var(--s));
+          text-align: center;
+          line-height: 1;
+        }
+        .icon {
+          width: calc(17px * var(--s));
+          height: calc(17px * var(--s));
+          color: var(--accent);
+        }
+        .icon svg {
+          width: 100%;
+          height: 100%;
+          display: block;
+        }
+        .label {
+          color: var(--text-color);
+          font-size: calc(6.5px * var(--s));
+          font-weight: 700;
+          letter-spacing: 0.05em;
+        }
+        .value {
+          color: var(--accent);
+          font-size: calc(10px * var(--s));
+          font-weight: 700;
+          letter-spacing: 0.03em;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="shell" aria-label="USB input selected">
+        <div class="stack">
+          <div class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="17" height="17">
+              <path d="M7 2a1 1 0 0 1 1 1v3h2V3a1 1 0 1 1 2 0v3h2V3a1 1 0 1 1 2 0v3h1a1 1 0 1 1 0 2h-1v2a5 5 0 0 1-4 4.9V20a1 1 0 1 1-2 0v-5.1A5 5 0 0 1 6 10V8H5a1 1 0 1 1 0-2h2V3a1 1 0 0 1 1-1z" fill="currentColor" />
+            </svg>
+          </div>
+          <div class="label">USB INPUT SELECTED</div>
+          <div id="value" class="value">INPUT 1</div>
+        </div>
+      </div>
+      <script>
+        (function () {
+          const root = document.documentElement;
+          const valueEl = document.getElementById("value");
+          const applyState = (next) => {
+            const value = Number(next) === 2 ? 2 : 1;
+            if (valueEl) valueEl.textContent = "INPUT " + String(value);
+          };
+          window.__setUsbInputPalette = (bg, text, accent) => {
+            const nextBg = String(bg || "").trim();
+            const nextText = String(text || "").trim();
+            const nextAccent = String(accent || "").trim();
+            if (nextBg) root.style.setProperty("--panel-bg", nextBg);
+            if (nextText) root.style.setProperty("--text-color", nextText);
+            if (nextAccent) root.style.setProperty("--accent", nextAccent);
+          };
+          window.__setUsbInputScale = (s) => {
+            const nextScale = Math.max(0.75, Math.min(1.5, Number(s) || 1));
+            root.style.setProperty("--s", String(nextScale));
+          };
+          window.__setUsbInputState = (next) => applyState(next);
+          applyState(${selected});
+        })();
+      </script>
+    </body>
+  </html>`;
+
+  if (usbInputNotificationWindow && !usbInputNotificationWindow.isDestroyed()) {
+    const win = usbInputNotificationWindow;
+    if (!win.isVisible()) {
+      applyUsbInputOsdLayout(win, nextLayout);
+      usbInputOsdLayout = nextLayout;
+      win.showInactive();
+    }
+    updateUsbInputNotificationPalette(win, palette, accent);
+    updateUsbInputNotificationUi(win, usbInputPendingValue ?? selected);
+    scheduleUsbInputNotificationClose(win);
+    return;
+  }
+
+  const win = new BrowserWindow({
+    width: nextLayout.width,
+    height: nextLayout.height,
+    minWidth: nextLayout.width,
+    maxWidth: nextLayout.width,
+    minHeight: nextLayout.height,
+    maxHeight: nextLayout.height,
+    show: false,
+    frame: false,
+    transparent: true,
+    backgroundColor: "#00000000",
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    focusable: false,
+    hasShadow: false,
+  });
+
+  usbInputNotificationWindow = win;
+  usbInputOsdLayout = nextLayout;
+  await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  win.setAlwaysOnTop(true, "screen-saver");
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+  const showUsbInputOsd = () => {
+    if (win.isDestroyed()) {
+      return;
+    }
+    const layout = usbInputOsdLayout ?? nextLayout;
+    applyUsbInputOsdLayout(win, layout);
+    updateUsbInputNotificationPalette(win, palette, accent);
+    win.showInactive();
+    updateUsbInputNotificationUi(win, usbInputPendingValue ?? selected);
+    scheduleUsbInputNotificationClose(win);
+  };
+
+  win.once("ready-to-show", showUsbInputOsd);
+  win.webContents.once("did-finish-load", () => {
+    if (!win.isVisible()) {
+      showUsbInputOsd();
+    }
+  });
+  win.on("closed", () => {
+    if (usbInputNotificationWindow === win) {
+      usbInputNotificationWindow = null;
+    }
+    usbInputPendingValue = null;
+    usbInputOsdLayout = null;
+    clearUsbInputNotificationTimer();
   });
 }
 
@@ -2690,6 +2980,9 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
   if (isNotifEnabled("micMute") && previous.mic_mute !== next.mic_mute && next.mic_mute != null) {
     void showMicMuteNotification(next.mic_mute);
   }
+  if (isNotifEnabled("usbInput") && previous.current_usb_input !== next.current_usb_input && next.current_usb_input != null) {
+    void showUsbInputNotification(next.current_usb_input);
+  }
   const volumeChanged = previous.headset_volume_percent !== next.headset_volume_percent;
   const chatMixChanged = previous.chat_mix_balance !== next.chat_mix_balance;
   const chatMixOsdEnabled = isHeadsetChatMixEnabled();
@@ -2793,6 +3086,7 @@ function migrateLegacyState(): void {
   if (fs.existsSync(oldSettings)) {
     settings = mergeSettings(readJsonFile<Partial<UiSettings>>(oldSettings, {}));
   }
+  cachedState = applyUsbInputInference(cachedState);
   persistNow();
 }
 
@@ -2911,6 +3205,7 @@ function toggleFlyout(): void {
 
 function loadSettings(): void {
   loadPersistedSnapshot();
+  cachedState = applyUsbInputInference(cachedState);
 }
 
 function persistSettings(next: UiSettings): UiSettings {
@@ -2928,6 +3223,8 @@ function harmonizeLiveState(previous: AppState, incoming: AppState): AppState {
     ...next,
     headset_battery_percent: keep(next.headset_battery_percent, previous.headset_battery_percent),
     base_battery_percent: keep(next.base_battery_percent, previous.base_battery_percent),
+    base_station_connected: keep(next.base_station_connected, previous.base_station_connected),
+    current_usb_input: keep(next.current_usb_input, previous.current_usb_input),
     headset_volume_percent: keep(next.headset_volume_percent, previous.headset_volume_percent),
     anc_mode: keep(next.anc_mode, previous.anc_mode),
     mic_mute: keep(next.mic_mute, previous.mic_mute),
@@ -3064,7 +3361,7 @@ function wireBackend(): void {
   }
   backend.on("state", (state: AppState) => {
     const previous = cachedState;
-    cachedState = harmonizeLiveState(cachedState, state);
+    cachedState = applyUsbInputInference(harmonizeLiveState(cachedState, state));
     if (hasSeenLiveState) {
       notifyStateChanges(previous, cachedState);
     } else {
@@ -3196,6 +3493,9 @@ function wireIpc(): void {
     if (next.notifications.micMute === false && micMuteNotificationWindow && !micMuteNotificationWindow.isDestroyed()) {
       micMuteNotificationWindow.close();
     }
+    if (next.notifications.usbInput === false && usbInputNotificationWindow && !usbInputNotificationWindow.isDestroyed()) {
+      usbInputNotificationWindow.close();
+    }
     if (next.notifications.ancMode === false && ancModeNotificationWindow && !ancModeNotificationWindow.isDestroyed()) {
       ancModeNotificationWindow.close();
     }
@@ -3214,6 +3514,14 @@ function wireIpc(): void {
     if (next.notifications.battery === false) {
       clearHeadsetBatterySwapDelayTimer();
       resetBatterySwapTrack();
+    }
+    const inferredState = applyUsbInputInference(cachedState);
+    if (inferredState !== cachedState) {
+      cachedState = inferredState;
+      schedulePersist();
+      for (const win of allWindows()) {
+        win.webContents.send("backend:state", cachedState);
+      }
     }
     for (const win of allWindows()) {
       win.webContents.send("settings:update", next);
@@ -3686,6 +3994,7 @@ app.on("before-quit", () => {
   isQuitting = true;
   clearHeadsetVolumeNotificationTimer();
   clearMicMuteNotificationTimer();
+  clearUsbInputNotificationTimer();
   clearAncModeNotificationTimer();
   clearConnectivityNotificationTimer();
   clearBatteryLowNotificationTimer();
@@ -3695,6 +4004,7 @@ app.on("before-quit", () => {
   headsetVolumePendingValue = null;
   headsetChatMixPendingValue = null;
   micMutePendingValue = null;
+  usbInputPendingValue = null;
   ancModePendingValue = null;
   connectivityPendingValue = null;
   batteryLowPendingValue = null;
@@ -3708,6 +4018,10 @@ app.on("before-quit", () => {
   if (micMuteNotificationWindow && !micMuteNotificationWindow.isDestroyed()) {
     micMuteNotificationWindow.destroy();
     micMuteNotificationWindow = null;
+  }
+  if (usbInputNotificationWindow && !usbInputNotificationWindow.isDestroyed()) {
+    usbInputNotificationWindow.destroy();
+    usbInputNotificationWindow = null;
   }
   if (ancModeNotificationWindow && !ancModeNotificationWindow.isDestroyed()) {
     ancModeNotificationWindow.destroy();

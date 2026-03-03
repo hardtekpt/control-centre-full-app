@@ -5,6 +5,8 @@ const DEFAULT_CHANNELS: ChannelKey[] = ["master", "game", "chatRender", "media",
 export const DEFAULT_STATE: AppState = {
   headset_battery_percent: null,
   base_battery_percent: null,
+  base_station_connected: null,
+  current_usb_input: null,
   headset_volume_percent: null,
   anc_mode: null,
   mic_mute: null,
@@ -26,6 +28,7 @@ export const DEFAULT_SETTINGS: UiSettings = {
   accentColor: "",
   textScale: 100,
   useActiveDisplay: false,
+  pcUsbInput: 1,
   showBatteryPercent: true,
   notificationTimeout: 5,
   batteryLowThreshold: 15,
@@ -35,6 +38,7 @@ export const DEFAULT_SETTINGS: UiSettings = {
   visibleChannels: [...DEFAULT_CHANNELS],
   notifications: {
     connectivity: true,
+    usbInput: true,
     ancMode: true,
     oled: true,
     sidetone: true,
@@ -93,6 +97,7 @@ export function mergeSettings(partial?: Partial<UiSettings>): UiSettings {
   return {
     ...DEFAULT_SETTINGS,
     ...partialSanitized,
+    pcUsbInput: partialSanitized.pcUsbInput === 2 ? 2 : 1,
     notificationTimeout: clamp((partialSanitized.notificationTimeout ?? DEFAULT_SETTINGS.notificationTimeout), 2, 30),
     batteryLowThreshold: clamp((partialSanitized.batteryLowThreshold ?? DEFAULT_SETTINGS.batteryLowThreshold), 1, 100),
     flyoutWidth: clamp((partialSanitized.flyoutWidth ?? DEFAULT_SETTINGS.flyoutWidth), 320, 1000),
