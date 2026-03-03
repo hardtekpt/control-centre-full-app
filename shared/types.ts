@@ -55,6 +55,7 @@ export interface UiSettings {
   flyoutWidth: number;
   flyoutHeight: number;
   toggleShortcut: string;
+  shortcuts: ShortcutBinding[];
   visibleChannels: ChannelKey[];
   notifications: Record<NotificationKey, boolean>;
   ddc: {
@@ -68,6 +69,31 @@ export interface UiSettings {
       }
     >;
   };
+}
+
+export type ShortcutAction =
+  | "sonar_volume_up"
+  | "sonar_volume_down"
+  | "sonar_mute_toggle"
+  | "sonar_mute_on"
+  | "sonar_mute_off"
+  | "sonar_set_preset"
+  | "ddc_brightness_up"
+  | "ddc_brightness_down"
+  | "ddc_brightness_set"
+  | "ddc_input_set";
+
+export interface ShortcutBinding {
+  id: string;
+  enabled: boolean;
+  accelerator: string;
+  action: ShortcutAction;
+  channel?: ChannelKey;
+  step?: number;
+  presetId?: string;
+  monitorId?: number;
+  brightness?: number;
+  inputSource?: string;
 }
 
 export interface BackendCommand {

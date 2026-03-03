@@ -1,4 +1,4 @@
-import type { AppState, ChannelKey, UiSettings } from "./types";
+import type { AppState, ChannelKey, ShortcutAction, ShortcutBinding, UiSettings } from "./types";
 
 const DEFAULT_CHANNELS: ChannelKey[] = ["master", "game", "chatRender", "media", "aux", "chatCapture"];
 
@@ -35,6 +35,7 @@ export const DEFAULT_SETTINGS: UiSettings = {
   flyoutWidth: 760,
   flyoutHeight: 520,
   toggleShortcut: "CommandOrControl+Shift+A",
+  shortcuts: [],
   visibleChannels: [...DEFAULT_CHANNELS],
   notifications: {
     connectivity: true,
@@ -102,6 +103,7 @@ export function mergeSettings(partial?: Partial<UiSettings>): UiSettings {
     batteryLowThreshold: clamp((partialSanitized.batteryLowThreshold ?? DEFAULT_SETTINGS.batteryLowThreshold), 1, 100),
     flyoutWidth: clamp((partialSanitized.flyoutWidth ?? DEFAULT_SETTINGS.flyoutWidth), 320, 1000),
     flyoutHeight: clamp((partialSanitized.flyoutHeight ?? DEFAULT_SETTINGS.flyoutHeight), 260, 1200),
+    shortcuts: sanitizeShortcuts(partialSanitized.shortcuts),
     visibleChannels,
     notifications: {
       ...DEFAULT_SETTINGS.notifications,
@@ -119,4 +121,90 @@ export function mergeSettings(partial?: Partial<UiSettings>): UiSettings {
 
 function clamp(value: number, low: number, high: number): number {
   return Math.min(high, Math.max(low, value));
+}
+
+const SHORTCUT_ACTIONS: ShortcutAction[] = [
+  "sonar_volume_up",
+  "sonar_volume_down",
+  "sonar_mute_toggle",
+  "sonar_mute_on",
+  "sonar_mute_off",
+  "sonar_set_preset",
+  "ddc_brightness_up",
+  "ddc_brightness_down",
+  "ddc_brightness_set",
+  "ddc_input_set",
+];
+
+const SHORTCUT_ACTION_SET = new Set<ShortcutAction>(SHORTCUT_ACTIONS);
+
+function sanitizeShortcuts(value: unknown): ShortcutBinding[] {
+  if (!Array.isArray(value)) {
+    return [...DEFAULT_SETTINGS.shortcuts];
+  }
+  const out: ShortcutBinding[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const item = value[index];
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const row = item as Record<string, unknown>;
+    const action = sanitizeShortcutAction(row.action);
+    const channel = sanitizeShortcutChannel(row.channel);
+    const monitorIdRaw = Number(row.monitorId ?? row.monitor_id);
+    const monitorId = Number.isFinite(monitorIdRaw) && monitorIdRaw > 0 ? Math.round(monitorIdRaw) : undefined;
+    const presetId = String(row.presetId ?? row.preset_id ?? "").trim() || undefined;
+    const inputSource = String(row.inputSource ?? row.input_source ?? "").trim() || undefined;
+    const shortcut: ShortcutBinding = {
+      id: sanitizeShortcutId(row.id, index),
+      enabled: row.enabled !== false,
+      accelerator: String(row.accelerator ?? "")
+        .trim()
+        .slice(0, 120),
+      action,
+    };
+    if (channel) {
+      shortcut.channel = channel;
+    }
+    if (presetId) {
+      shortcut.presetId = presetId;
+    }
+    if (monitorId) {
+      shortcut.monitorId = monitorId;
+    }
+    if (inputSource) {
+      shortcut.inputSource = inputSource;
+    }
+    if (row.step != null && Number.isFinite(Number(row.step))) {
+      shortcut.step = clamp(Math.round(Number(row.step)), 1, 50);
+    }
+    if (row.brightness != null && Number.isFinite(Number(row.brightness))) {
+      shortcut.brightness = clamp(Math.round(Number(row.brightness)), 0, 100);
+    }
+    out.push(shortcut);
+  }
+  return out.slice(0, 100);
+}
+
+function sanitizeShortcutAction(value: unknown): ShortcutAction {
+  const raw = String(value ?? "").trim() as ShortcutAction;
+  if (SHORTCUT_ACTION_SET.has(raw)) {
+    return raw;
+  }
+  return "sonar_volume_up";
+}
+
+function sanitizeShortcutChannel(value: unknown): ChannelKey | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  return DEFAULT_CHANNELS.includes(value as ChannelKey) ? (value as ChannelKey) : undefined;
+}
+
+function sanitizeShortcutId(value: unknown, index: number): string {
+  const raw = String(value ?? "").trim().slice(0, 80);
+  if (raw) {
+    return raw;
+  }
+  return `shortcut-${index + 1}`;
 }

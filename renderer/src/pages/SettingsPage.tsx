@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
-import { CHANNELS, type ChannelKey, type NotificationKey, type UiSettings } from "@shared/types";
+import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { CHANNELS, type ChannelKey, type NotificationKey, type PresetMap, type ShortcutAction, type ShortcutBinding, type UiSettings } from "@shared/types";
 import type { DdcMonitor, ServiceStatus } from "../state/store";
 
 interface SettingsProps {
   settings: UiSettings;
+  presets: PresetMap;
   ddcMonitors: DdcMonitor[];
   ddcMonitorsUpdatedAt: number | null;
   ddcError: string | null;
@@ -33,10 +34,103 @@ const NOTIFICATION_LABELS: Array<{ key: NotificationKey; label: string }> = [
   { key: "presetChange", label: "Sonar Preset Change" },
 ];
 
-type SettingsTab = "app" | "ggSonar" | "notifications" | "ddc" | "about";
+const SHORTCUT_ACTION_OPTIONS: Array<{ value: ShortcutAction; label: string }> = [
+  { value: "sonar_volume_up", label: "Sonar Volume Up" },
+  { value: "sonar_volume_down", label: "Sonar Volume Down" },
+  { value: "sonar_mute_toggle", label: "Sonar Toggle Mute" },
+  { value: "sonar_mute_on", label: "Sonar Mute On" },
+  { value: "sonar_mute_off", label: "Sonar Mute Off" },
+  { value: "sonar_set_preset", label: "Sonar Set Preset" },
+  { value: "ddc_brightness_up", label: "Monitor Brightness Up" },
+  { value: "ddc_brightness_down", label: "Monitor Brightness Down" },
+  { value: "ddc_brightness_set", label: "Monitor Brightness Set" },
+  { value: "ddc_input_set", label: "Monitor Input Set" },
+];
+
+type SettingsTab = "app" | "ggSonar" | "shortcuts" | "notifications" | "ddc" | "about";
+
+function createShortcutId(): string {
+  return `shortcut-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function defaultShortcutBinding(): ShortcutBinding {
+  return {
+    id: createShortcutId(),
+    enabled: true,
+    accelerator: "",
+    action: "sonar_volume_up",
+    channel: "master",
+    step: 5,
+  };
+}
+
+function normalizeAcceleratorKey(key: string): string | null {
+  if (!key) {
+    return null;
+  }
+  const lower = key.toLowerCase();
+  if (lower.length === 1 && /[a-z0-9]/.test(lower)) {
+    return lower.toUpperCase();
+  }
+  if (/^f\d{1,2}$/i.test(key)) {
+    return key.toUpperCase();
+  }
+  const map: Record<string, string> = {
+    " ": "Space",
+    escape: "Esc",
+    enter: "Enter",
+    tab: "Tab",
+    backspace: "Backspace",
+    delete: "Delete",
+    insert: "Insert",
+    home: "Home",
+    end: "End",
+    pageup: "PageUp",
+    pagedown: "PageDown",
+    arrowup: "Up",
+    arrowdown: "Down",
+    arrowleft: "Left",
+    arrowright: "Right",
+    plus: "Plus",
+    minus: "-",
+    comma: ",",
+    period: ".",
+    slash: "/",
+    semicolon: ";",
+    quote: "'",
+    bracketleft: "[",
+    bracketright: "]",
+    backslash: "\\",
+    backquote: "`",
+  };
+  return map[lower] ?? null;
+}
+
+function acceleratorFromEvent(event: ReactKeyboardEvent<HTMLInputElement>): string | null {
+  const key = normalizeAcceleratorKey(event.key);
+  if (!key) {
+    return null;
+  }
+  if (["control", "shift", "alt", "meta"].includes(event.key.toLowerCase())) {
+    return null;
+  }
+  const parts: string[] = [];
+  if (event.ctrlKey || event.metaKey) {
+    parts.push("CommandOrControl");
+  }
+  if (event.altKey) {
+    parts.push("Alt");
+  }
+  if (event.shiftKey) {
+    parts.push("Shift");
+  }
+  parts.push(key);
+  return parts.join("+");
+}
 
 export default function SettingsPage({
   settings,
+  presets,
   ddcMonitors,
   ddcMonitorsUpdatedAt,
   ddcError,
@@ -53,6 +147,7 @@ export default function SettingsPage({
 }: SettingsProps) {
   const [tab, setTab] = useState<SettingsTab>(initialTab);
   const [shortcutDraft, setShortcutDraft] = useState(settings.toggleShortcut);
+  const [newShortcut, setNewShortcut] = useState<ShortcutBinding>(defaultShortcutBinding);
 
   useEffect(() => setShortcutDraft(settings.toggleShortcut), [settings.toggleShortcut]);
   useEffect(() => setTab(initialTab), [initialTab]);
@@ -73,6 +168,184 @@ export default function SettingsPage({
     });
   };
 
+  const updateShortcuts = (next: ShortcutBinding[]) => {
+    onUpdate({ shortcuts: next });
+  };
+
+  const applyShortcutPatch = (id: string, patch: Partial<ShortcutBinding>) => {
+    const next = settings.shortcuts.map((item) => (item.id === id ? { ...item, ...patch } : item));
+    updateShortcuts(next);
+  };
+
+  const removeShortcut = (id: string) => {
+    updateShortcuts(settings.shortcuts.filter((item) => item.id !== id));
+  };
+
+  const withActionDefaults = (binding: ShortcutBinding, action: ShortcutAction): ShortcutBinding => {
+    const monitorId = ddcMonitors[0]?.monitor_id;
+    if (action === "sonar_set_preset") {
+      const channel = binding.channel ?? "master";
+      const firstPreset = presets[channel]?.[0]?.[0];
+      return { ...binding, action, channel, presetId: firstPreset ?? binding.presetId };
+    }
+    if (action === "sonar_volume_up" || action === "sonar_volume_down") {
+      return { ...binding, action, channel: binding.channel ?? "master", step: binding.step ?? 5 };
+    }
+    if (action === "sonar_mute_toggle" || action === "sonar_mute_on" || action === "sonar_mute_off") {
+      return { ...binding, action, channel: binding.channel ?? "master" };
+    }
+    if (action === "ddc_brightness_up" || action === "ddc_brightness_down") {
+      return { ...binding, action, monitorId: binding.monitorId ?? monitorId, step: binding.step ?? 5 };
+    }
+    if (action === "ddc_brightness_set") {
+      return { ...binding, action, monitorId: binding.monitorId ?? monitorId, brightness: binding.brightness ?? 50 };
+    }
+    if (action === "ddc_input_set") {
+      const monitor = ddcMonitors.find((item) => item.monitor_id === binding.monitorId) ?? ddcMonitors[0];
+      return {
+        ...binding,
+        action,
+        monitorId: binding.monitorId ?? monitor?.monitor_id,
+        inputSource: binding.inputSource ?? monitor?.available_inputs?.[0] ?? "",
+      };
+    }
+    return { ...binding, action };
+  };
+
+  const onShortcutKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>, apply: (value: string) => void) => {
+    if (event.key === "Tab") {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.key === "Backspace" || event.key === "Delete") {
+      apply("");
+      return;
+    }
+    const accelerator = acceleratorFromEvent(event);
+    if (accelerator) {
+      apply(accelerator);
+    }
+  };
+
+  const renderShortcutActionControls = (binding: ShortcutBinding, onPatch: (patch: Partial<ShortcutBinding>) => void) => {
+    const monitor = ddcMonitors.find((item) => item.monitor_id === binding.monitorId) ?? ddcMonitors[0];
+    if (
+      binding.action === "sonar_volume_up" ||
+      binding.action === "sonar_volume_down" ||
+      binding.action === "sonar_mute_toggle" ||
+      binding.action === "sonar_mute_on" ||
+      binding.action === "sonar_mute_off" ||
+      binding.action === "sonar_set_preset"
+    ) {
+      const channel = binding.channel ?? "master";
+      return (
+        <>
+          <select
+            value={channel}
+            onChange={(e) => onPatch({ channel: e.currentTarget.value as ChannelKey })}
+            className="shortcut-field shortcut-field-channel"
+          >
+            {CHANNELS.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+          {(binding.action === "sonar_volume_up" || binding.action === "sonar_volume_down") && (
+            <input
+              className="text-input shortcut-field shortcut-field-number"
+              type="number"
+              min={1}
+              max={50}
+              value={binding.step ?? 5}
+              onChange={(e) => onPatch({ step: Number(e.currentTarget.value) || 5 })}
+              title="Step (%)"
+            />
+          )}
+          {binding.action === "sonar_set_preset" && (
+            <select
+              value={binding.presetId ?? ""}
+              onChange={(e) => onPatch({ presetId: e.currentTarget.value })}
+              className="shortcut-field shortcut-field-preset"
+            >
+              <option value="">Select preset</option>
+              {(presets[channel] ?? []).map(([id, label]) => (
+                <option key={id} value={id}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          )}
+        </>
+      );
+    }
+    if (binding.action === "ddc_brightness_up" || binding.action === "ddc_brightness_down" || binding.action === "ddc_brightness_set" || binding.action === "ddc_input_set") {
+      return (
+        <>
+          <select
+            value={binding.monitorId ?? monitor?.monitor_id ?? ""}
+            onChange={(e) => onPatch({ monitorId: Number(e.currentTarget.value) || undefined })}
+            className="shortcut-field shortcut-field-monitor"
+          >
+            <option value="">Select monitor</option>
+            {ddcMonitors.map((item) => (
+              <option key={item.monitor_id} value={item.monitor_id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+          {(binding.action === "ddc_brightness_up" || binding.action === "ddc_brightness_down") && (
+            <input
+              className="text-input shortcut-field shortcut-field-number"
+              type="number"
+              min={1}
+              max={50}
+              value={binding.step ?? 5}
+              onChange={(e) => onPatch({ step: Number(e.currentTarget.value) || 5 })}
+              title="Step (%)"
+            />
+          )}
+          {binding.action === "ddc_brightness_set" && (
+            <input
+              className="text-input shortcut-field shortcut-field-number"
+              type="number"
+              min={0}
+              max={100}
+              value={binding.brightness ?? 50}
+              onChange={(e) => onPatch({ brightness: Number(e.currentTarget.value) || 0 })}
+              title="Brightness (%)"
+            />
+          )}
+          {binding.action === "ddc_input_set" && (
+            <select
+              value={binding.inputSource ?? ""}
+              onChange={(e) => onPatch({ inputSource: e.currentTarget.value })}
+              className="shortcut-field shortcut-field-input"
+            >
+              <option value="">Select input</option>
+              {(monitor?.available_inputs ?? []).map((input) => (
+                <option key={input} value={input}>
+                  {input}
+                </option>
+              ))}
+            </select>
+          )}
+        </>
+      );
+    }
+    return null;
+  };
+
+  const addShortcut = () => {
+    if (!newShortcut.accelerator.trim()) {
+      return;
+    }
+    const next = [...settings.shortcuts, { ...newShortcut, id: createShortcutId() }];
+    updateShortcuts(next);
+    setNewShortcut(defaultShortcutBinding());
+  };
+
   return (
     <section className="card settings-page settings-shell">
       <aside className="settings-sidebar">
@@ -82,6 +355,9 @@ export default function SettingsPage({
         </button>
         <button className={`settings-nav-btn ${tab === "ggSonar" ? "active" : ""}`} onClick={() => setTab("ggSonar")}>
           GG Sonar
+        </button>
+        <button className={`settings-nav-btn ${tab === "shortcuts" ? "active" : ""}`} onClick={() => setTab("shortcuts")}>
+          Shortcuts
         </button>
         <button className={`settings-nav-btn ${tab === "notifications" ? "active" : ""}`} onClick={() => setTab("notifications")}>
           Notifications
@@ -217,6 +493,75 @@ export default function SettingsPage({
                 </button>
                 <button className="button" onClick={onTestBatterySwapNotification} style={{ marginLeft: "8px" }}>
                   Test Battery Swap Notification
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+        {tab === "shortcuts" && (
+          <>
+            <h3>Shortcut Settings</h3>
+            <p className="hint">Click a shortcut field and press the key combination to capture it.</p>
+            <div className="shortcut-list">
+              {settings.shortcuts.length === 0 && <div className="hint">No shortcuts configured.</div>}
+              {settings.shortcuts.map((shortcut) => (
+                <div className="shortcut-row" key={shortcut.id}>
+                  <input
+                    type="checkbox"
+                    checked={shortcut.enabled !== false}
+                    onChange={(e) => applyShortcutPatch(shortcut.id, { enabled: e.currentTarget.checked })}
+                    title="Enabled"
+                  />
+                  <input
+                    className="text-input shortcut-field shortcut-field-accelerator"
+                    value={shortcut.accelerator}
+                    placeholder="Press keys..."
+                    onKeyDown={(e) => onShortcutKeyDown(e, (value) => applyShortcutPatch(shortcut.id, { accelerator: value }))}
+                    readOnly
+                  />
+                  <select
+                    className="shortcut-field shortcut-field-action"
+                    value={shortcut.action}
+                    onChange={(e) => applyShortcutPatch(shortcut.id, withActionDefaults(shortcut, e.currentTarget.value as ShortcutAction))}
+                  >
+                    {SHORTCUT_ACTION_OPTIONS.map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                  {renderShortcutActionControls(shortcut, (patch) => applyShortcutPatch(shortcut.id, patch))}
+                  <button className="button shortcut-delete" onClick={() => removeShortcut(shortcut.id)}>
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="shortcut-add">
+              <h3>Add Shortcut</h3>
+              <div className="shortcut-row">
+                <input type="checkbox" checked={newShortcut.enabled !== false} onChange={(e) => setNewShortcut((prev) => ({ ...prev, enabled: e.currentTarget.checked }))} />
+                <input
+                  className="text-input shortcut-field shortcut-field-accelerator"
+                  value={newShortcut.accelerator}
+                  placeholder="Press keys..."
+                  onKeyDown={(e) => onShortcutKeyDown(e, (value) => setNewShortcut((prev) => ({ ...prev, accelerator: value })))}
+                  readOnly
+                />
+                <select
+                  className="shortcut-field shortcut-field-action"
+                  value={newShortcut.action}
+                  onChange={(e) => setNewShortcut((prev) => withActionDefaults(prev, e.currentTarget.value as ShortcutAction))}
+                >
+                  {SHORTCUT_ACTION_OPTIONS.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+                {renderShortcutActionControls(newShortcut, (patch) => setNewShortcut((prev) => ({ ...prev, ...patch })))}
+                <button className="button shortcut-add-btn" onClick={addShortcut}>
+                  Add
                 </button>
               </div>
             </div>

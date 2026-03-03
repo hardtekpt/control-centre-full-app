@@ -80,6 +80,7 @@ function LiveApp({ windowMode }: { windowMode: "dashboard" | "settings" }) {
       <main className="window-base app-shell standalone-page">
         <SettingsPage
           settings={resolvedSettings}
+          presets={presets}
           ddcMonitors={ddcMonitors}
           ddcMonitorsUpdatedAt={ddcMonitorsUpdatedAt}
           ddcError={ddcError}

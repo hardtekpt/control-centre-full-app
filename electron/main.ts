@@ -1,14 +1,15 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, nativeTheme, screen as electronScreen, shell } from "electron";
+import { app, BrowserWindow, ipcMain, nativeTheme, screen as electronScreen, shell } from "electron";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { execFile } from "node:child_process";
 import { ArctisApiService } from "./services/apis/arctis/service";
 import { DdcApiService } from "./services/apis/ddc/service";
+import { ShortcutService } from "./services/shortcuts/service";
 import { createFlyoutWindow, positionBottomRight, saveWindowBounds } from "./window";
 import { buildTrayIcon, createTray } from "./tray";
 import { DEFAULT_SETTINGS, mergeSettings, mergeState } from "../shared/settings.js";
-import type { AppState, BackendCommand, ChannelKey, PresetMap, UiSettings } from "../shared/types";
+import { CHANNELS, type AppState, type BackendCommand, type ChannelKey, type PresetMap, type ShortcutBinding, type UiSettings } from "../shared/types";
 
 let mainWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
@@ -20,6 +21,9 @@ let headsetChatMixPendingValue: number | null = null;
 let micMuteNotificationWindow: BrowserWindow | null = null;
 let micMuteNotificationTimer: NodeJS.Timeout | null = null;
 let micMutePendingValue: boolean | null = null;
+let presetChangeNotificationWindow: BrowserWindow | null = null;
+let presetChangeNotificationTimer: NodeJS.Timeout | null = null;
+let presetChangePendingValue: { channel: ChannelKey; presetName: string } | null = null;
 let usbInputNotificationWindow: BrowserWindow | null = null;
 let usbInputNotificationTimer: NodeJS.Timeout | null = null;
 let usbInputPendingValue: 1 | 2 | null = null;
@@ -61,6 +65,7 @@ interface HeadsetBatterySwapNotificationPayload {
 type OsdLayout = { displayId: number; x: number; y: number; width: number; height: number; uiScale: number };
 let headsetVolumeOsdLayout: OsdLayout | null = null;
 let micMuteOsdLayout: OsdLayout | null = null;
+let presetChangeOsdLayout: OsdLayout | null = null;
 let usbInputOsdLayout: OsdLayout | null = null;
 let ancModeOsdLayout: OsdLayout | null = null;
 let connectivityOsdLayout: OsdLayout | null = null;
@@ -73,6 +78,7 @@ let cachedState: AppState = mergeState();
 let cachedPresets: PresetMap = {};
 let backend: ArctisApiService | null = null;
 let ddcService: DdcApiService | null = null;
+const shortcutService = new ShortcutService();
 let lastStatusText = "ready";
 let lastErrorText: string | null = null;
 let logBuffer: string[] = [];
@@ -102,6 +108,8 @@ const HEADSET_VOLUME_OSD_BASE_HEIGHT_DOUBLE = 70;
 const MIC_MUTE_OSD_BASE_SIZE = 62;
 const MIC_MUTE_LIVE_ACCENT = "#3fcf8e";
 const MIC_MUTE_MUTED_ACCENT = "#ef5350";
+const PRESET_CHANGE_OSD_BASE_WIDTH = 256;
+const PRESET_CHANGE_OSD_BASE_HEIGHT = 58;
 const USB_INPUT_OSD_BASE_SIZE = 102;
 const ANC_MODE_OSD_BASE_SIZE = 62;
 const ANC_MODE_ON_ACCENT = "#3fcf8e";
@@ -452,6 +460,13 @@ function clearMicMuteNotificationTimer(): void {
   }
 }
 
+function clearPresetChangeNotificationTimer(): void {
+  if (presetChangeNotificationTimer) {
+    clearTimeout(presetChangeNotificationTimer);
+    presetChangeNotificationTimer = null;
+  }
+}
+
 function clearUsbInputNotificationTimer(): void {
   if (usbInputNotificationTimer) {
     clearTimeout(usbInputNotificationTimer);
@@ -516,6 +531,16 @@ function scheduleMicMuteNotificationClose(win: BrowserWindow): void {
   clearMicMuteNotificationTimer();
   micMuteNotificationTimer = setTimeout(() => {
     micMuteNotificationTimer = null;
+    if (!win.isDestroyed()) {
+      win.close();
+    }
+  }, Math.max(2, settings.notificationTimeout) * 1000);
+}
+
+function schedulePresetChangeNotificationClose(win: BrowserWindow): void {
+  clearPresetChangeNotificationTimer();
+  presetChangeNotificationTimer = setTimeout(() => {
+    presetChangeNotificationTimer = null;
     if (!win.isDestroyed()) {
       win.close();
     }
@@ -703,6 +728,25 @@ function resolveBatteryLowOsdLayout(): OsdLayout {
     y,
     width: size,
     height: size,
+    uiScale: resolutionScale,
+  };
+}
+
+function resolvePresetChangeOsdLayout(): OsdLayout {
+  const display = resolveUiDisplay();
+  const workArea = display.workArea;
+  const resolutionScale = clampNumber(Math.min(workArea.width / 1920, workArea.height / 1080), 0.82, 1.18);
+  const width = Math.max(216, Math.round(PRESET_CHANGE_OSD_BASE_WIDTH * resolutionScale));
+  const height = Math.max(50, Math.round(PRESET_CHANGE_OSD_BASE_HEIGHT * resolutionScale));
+  const margin = Math.max(10, Math.round(12 * resolutionScale));
+  const x = Math.round(workArea.x + (workArea.width - width) / 2);
+  const y = workArea.y + workArea.height - height - margin;
+  return {
+    displayId: display.id,
+    x,
+    y,
+    width,
+    height,
     uiScale: resolutionScale,
   };
 }
@@ -1327,6 +1371,244 @@ async function showMicMuteNotification(muted: boolean): Promise<void> {
     micMutePendingValue = null;
     micMuteOsdLayout = null;
     clearMicMuteNotificationTimer();
+  });
+}
+
+function updatePresetChangeNotificationScale(win: BrowserWindow, uiScale: number): void {
+  const scale = clampNumber(uiScale, 0.75, 1.5).toFixed(4);
+  void win.webContents
+    .executeJavaScript(`window.__setPresetChangeScale?.(${scale});`, true)
+    .catch(() => undefined);
+}
+
+function updatePresetChangeNotificationPalette(win: BrowserWindow, palette: { panelBg: string; textColor: string }, accent: string): void {
+  const safeBg = String(palette.panelBg || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const safeText = String(palette.textColor || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const safeAccent = String(accent || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  if (!safeBg || !safeText || !safeAccent) {
+    return;
+  }
+  void win.webContents
+    .executeJavaScript(`window.__setPresetChangePalette?.('${safeBg}','${safeText}','${safeAccent}');`, true)
+    .catch(() => undefined);
+}
+
+function updatePresetChangeNotificationUi(win: BrowserWindow, payload: { channel: ChannelKey; presetName: string }): void {
+  const channel = channelDisplayName(payload.channel);
+  const presetName = String(payload.presetName || "").trim() || "Preset";
+  void win.webContents
+    .executeJavaScript(`window.__setPresetChangeState?.(${JSON.stringify(channel)}, ${JSON.stringify(presetName)});`, true)
+    .catch(() => undefined);
+}
+
+function applyPresetChangeOsdLayout(win: BrowserWindow, layout: OsdLayout): void {
+  win.setMinimumSize(layout.width, layout.height);
+  win.setMaximumSize(layout.width, layout.height);
+  const bounds = win.getBounds();
+  if (bounds.x !== layout.x || bounds.y !== layout.y || bounds.width !== layout.width || bounds.height !== layout.height) {
+    win.setBounds(
+      {
+        x: layout.x,
+        y: layout.y,
+        width: layout.width,
+        height: layout.height,
+      },
+      false,
+    );
+  }
+  updatePresetChangeNotificationScale(win, layout.uiScale);
+}
+
+async function showPresetChangeNotification(channel: ChannelKey, presetName: string): Promise<void> {
+  presetChangePendingValue = { channel, presetName: String(presetName || "").trim() || "Preset" };
+  const nextLayout = resolvePresetChangeOsdLayout();
+  const theme = await getThemePayload();
+  const palette = resolveHeadsetVolumeNotificationPalette(theme);
+  const accent = settings.accentColor.trim() || theme.accent;
+
+  if (presetChangeNotificationWindow && !presetChangeNotificationWindow.isDestroyed()) {
+    const win = presetChangeNotificationWindow;
+    if (!win.isVisible()) {
+      applyPresetChangeOsdLayout(win, nextLayout);
+      presetChangeOsdLayout = nextLayout;
+      win.showInactive();
+    }
+    updatePresetChangeNotificationPalette(win, palette, accent);
+    updatePresetChangeNotificationUi(win, presetChangePendingValue);
+    schedulePresetChangeNotificationClose(win);
+    return;
+  }
+
+  const html = `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data:;" />
+      <style>
+        :root {
+          color-scheme: dark;
+          --s: ${nextLayout.uiScale.toFixed(4)};
+          --panel-bg: ${palette.panelBg};
+          --text-color: ${palette.textColor};
+          --accent: ${accent};
+        }
+        html, body {
+          margin: 0;
+          width: 100%;
+          height: 100%;
+          background: transparent;
+          overflow: hidden;
+          font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+        }
+        .shell {
+          width: 100%;
+          height: 100%;
+          box-sizing: border-box;
+          border-radius: calc(12px * var(--s));
+          border: 1px solid rgba(255,255,255,0.14);
+          background: var(--panel-bg);
+          box-shadow: 0 8px 18px rgba(0,0,0,0.38);
+          display: grid;
+          grid-template-columns: calc(34px * var(--s)) 1fr;
+          column-gap: calc(8px * var(--s));
+          align-items: center;
+          padding: calc(8px * var(--s));
+        }
+        .icon {
+          width: calc(34px * var(--s));
+          height: calc(34px * var(--s));
+          border-radius: 999px;
+          display: grid;
+          place-items: center;
+          background: color-mix(in srgb, var(--accent) 20%, transparent);
+          box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 44%, transparent);
+          color: var(--accent);
+          line-height: 0;
+        }
+        .icon svg {
+          width: calc(20px * var(--s));
+          height: calc(20px * var(--s));
+          display: block;
+        }
+        .copy {
+          min-width: 0;
+          display: grid;
+          row-gap: calc(1px * var(--s));
+        }
+        .title {
+          font-size: calc(10px * var(--s));
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          opacity: 0.74;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          color: var(--text-color);
+        }
+        .value {
+          font-size: calc(14px * var(--s));
+          font-weight: 700;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          color: var(--text-color);
+        }
+      </style>
+    </head>
+    <body>
+      <div class="shell" aria-label="Preset change">
+        <div class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M6 4a2 2 0 0 0-2 2v12l4-3 4 3V6a2 2 0 0 0-2-2H6zm9 1h4a1 1 0 1 1 0 2h-4a1 1 0 1 1 0-2zm0 4h4a1 1 0 1 1 0 2h-4a1 1 0 1 1 0-2zm0 4h4a1 1 0 1 1 0 2h-4a1 1 0 1 1 0-2z" fill="currentColor"/>
+          </svg>
+        </div>
+        <div class="copy">
+          <div class="title" id="channel">CHANNEL PRESET</div>
+          <div class="value" id="preset">Preset</div>
+        </div>
+      </div>
+      <script>
+        (function () {
+          const root = document.documentElement;
+          const channelEl = document.getElementById("channel");
+          const presetEl = document.getElementById("preset");
+          window.__setPresetChangePalette = (bg, text, accent) => {
+            const nextBg = String(bg || "").trim();
+            const nextText = String(text || "").trim();
+            const nextAccent = String(accent || "").trim();
+            if (nextBg) root.style.setProperty("--panel-bg", nextBg);
+            if (nextText) root.style.setProperty("--text-color", nextText);
+            if (nextAccent) root.style.setProperty("--accent", nextAccent);
+          };
+          window.__setPresetChangeScale = (s) => {
+            const nextScale = Math.max(0.75, Math.min(1.5, Number(s) || 1));
+            root.style.setProperty("--s", String(nextScale));
+          };
+          window.__setPresetChangeState = (channel, preset) => {
+            const channelText = String(channel || "CHANNEL").trim() || "CHANNEL";
+            const presetText = String(preset || "Preset").trim() || "Preset";
+            if (channelEl) channelEl.textContent = channelText + " PRESET";
+            if (presetEl) presetEl.textContent = presetText;
+          };
+          window.__setPresetChangeState(${JSON.stringify(channelDisplayName(channel))}, ${JSON.stringify(presetChangePendingValue.presetName)});
+        })();
+      </script>
+    </body>
+  </html>`;
+
+  const win = new BrowserWindow({
+    width: nextLayout.width,
+    height: nextLayout.height,
+    minWidth: nextLayout.width,
+    maxWidth: nextLayout.width,
+    minHeight: nextLayout.height,
+    maxHeight: nextLayout.height,
+    show: false,
+    frame: false,
+    transparent: true,
+    backgroundColor: "#00000000",
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    focusable: false,
+    hasShadow: false,
+  });
+
+  presetChangeNotificationWindow = win;
+  presetChangeOsdLayout = nextLayout;
+  await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  win.setAlwaysOnTop(true, "screen-saver");
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+  const showPresetNotification = () => {
+    if (win.isDestroyed()) {
+      return;
+    }
+    const layout = presetChangeOsdLayout ?? nextLayout;
+    applyPresetChangeOsdLayout(win, layout);
+    updatePresetChangeNotificationPalette(win, palette, accent);
+    win.showInactive();
+    updatePresetChangeNotificationUi(win, presetChangePendingValue ?? { channel, presetName });
+    schedulePresetChangeNotificationClose(win);
+  };
+
+  win.once("ready-to-show", showPresetNotification);
+  win.webContents.once("did-finish-load", () => {
+    if (!win.isVisible()) {
+      showPresetNotification();
+    }
+  });
+  win.on("closed", () => {
+    if (presetChangeNotificationWindow === win) {
+      presetChangeNotificationWindow = null;
+    }
+    presetChangePendingValue = null;
+    presetChangeOsdLayout = null;
+    clearPresetChangeNotificationTimer();
   });
 }
 
@@ -3068,7 +3350,7 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
     for (const [channel, nextValue] of Object.entries(nextPreset) as Array<[ChannelKey, string | null | undefined]>) {
       const prevValue = prevPreset[channel];
       if (nextValue !== prevValue && nextValue != null && String(nextValue).trim()) {
-        showSystemNotification("Control Centre", `${channelDisplayName(channel)} preset: ${getPresetDisplayName(channel, String(nextValue))}`);
+        void showPresetChangeNotification(channel, getPresetDisplayName(channel, String(nextValue)));
       }
     }
   }
@@ -3279,6 +3561,154 @@ function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+function broadcastStateUpdate(): void {
+  for (const win of allWindows()) {
+    win.webContents.send("backend:state", cachedState);
+  }
+}
+
+function resolveShortcutChannel(binding: ShortcutBinding): ChannelKey {
+  const channel = binding.channel;
+  if (channel && CHANNELS.includes(channel)) {
+    return channel;
+  }
+  return "master";
+}
+
+function resolveShortcutMonitorId(binding: ShortcutBinding): number | null {
+  if (Number.isFinite(binding.monitorId) && Number(binding.monitorId) > 0) {
+    return Number(binding.monitorId);
+  }
+  if (ddcMonitorsCache.length > 0) {
+    return ddcMonitorsCache[0].monitor_id;
+  }
+  if (!ddcService) {
+    return null;
+  }
+  try {
+    const monitors = ddcService.listMonitors();
+    if (monitors.length === 0) {
+      return null;
+    }
+    ddcMonitorsCache = [...monitors].sort((a, b) => a.monitor_id - b.monitor_id);
+    ddcMonitorsCacheTs = Date.now();
+    broadcastDdcUpdate();
+    return ddcMonitorsCache[0].monitor_id;
+  } catch {
+    return null;
+  }
+}
+
+function patchDdcMonitorCache(monitor: DdcMonitor): void {
+  ddcMonitorsCache = [...ddcMonitorsCache.filter((item) => item.monitor_id !== monitor.monitor_id), monitor].sort((a, b) => a.monitor_id - b.monitor_id);
+  ddcMonitorsCacheTs = Date.now();
+  broadcastDdcUpdate();
+}
+
+function executeShortcutBinding(binding: ShortcutBinding): void {
+  const action = binding.action;
+  if (action === "sonar_volume_up" || action === "sonar_volume_down") {
+    const channel = resolveShortcutChannel(binding);
+    const step = Math.max(1, Math.min(50, Number(binding.step) || 5));
+    const delta = action === "sonar_volume_up" ? step : -step;
+    const current = clampPercent(Number(cachedState.channel_volume?.[channel] ?? 0));
+    const next = clampPercent(current + delta);
+    backend?.send({
+      name: "set_channel_volume",
+      payload: { channel, value: next },
+    });
+    cachedState = mergeState({
+      ...cachedState,
+      channel_volume: { ...cachedState.channel_volume, [channel]: next },
+    });
+    schedulePersist();
+    broadcastStateUpdate();
+    return;
+  }
+  if (action === "sonar_mute_toggle" || action === "sonar_mute_on" || action === "sonar_mute_off") {
+    const channel = resolveShortcutChannel(binding);
+    const current = Boolean(cachedState.channel_mute?.[channel]);
+    const nextMuted = action === "sonar_mute_toggle" ? !current : action === "sonar_mute_on";
+    backend?.send({
+      name: "set_channel_mute",
+      payload: { channel, value: nextMuted },
+    });
+    cachedState = mergeState({
+      ...cachedState,
+      channel_mute: { ...cachedState.channel_mute, [channel]: nextMuted },
+    });
+    schedulePersist();
+    broadcastStateUpdate();
+    return;
+  }
+  if (action === "sonar_set_preset") {
+    const channel = resolveShortcutChannel(binding);
+    const presetId = String(binding.presetId ?? "").trim();
+    if (!presetId) {
+      pushLog(`Shortcut ignored (${binding.accelerator}): missing preset.`);
+      return;
+    }
+    backend?.send({
+      name: "set_preset",
+      payload: { channel, preset_id: presetId },
+    });
+    cachedState = mergeState({
+      ...cachedState,
+      channel_preset: { ...cachedState.channel_preset, [channel]: presetId },
+    });
+    if (isNotifEnabled("presetChange")) {
+      void showPresetChangeNotification(channel, getPresetDisplayName(channel, presetId));
+    }
+    schedulePersist();
+    broadcastStateUpdate();
+    return;
+  }
+  if (action === "ddc_brightness_up" || action === "ddc_brightness_down" || action === "ddc_brightness_set") {
+    if (!ddcService) {
+      pushLog("Shortcut ignored: DDC service unavailable.");
+      return;
+    }
+    const monitorId = resolveShortcutMonitorId(binding);
+    if (!monitorId) {
+      pushLog("Shortcut ignored: no DDC monitor available.");
+      return;
+    }
+    const current = ddcMonitorsCache.find((item) => item.monitor_id === monitorId)?.brightness;
+    const step = Math.max(1, Math.min(50, Number(binding.step) || 5));
+    const next =
+      action === "ddc_brightness_set"
+        ? clampPercent(Number(binding.brightness))
+        : clampPercent((Number.isFinite(current) ? Number(current) : 50) + (action === "ddc_brightness_up" ? step : -step));
+    try {
+      const monitor = ddcService.setBrightness(monitorId, next) as DdcMonitor;
+      patchDdcMonitorCache(monitor);
+      pushLog(`Shortcut: monitor ${monitorId} brightness ${next}%.`);
+    } catch (err) {
+      pushLog(`ERROR: Shortcut brightness failed for monitor ${monitorId}: ${normalizeError(err)}`);
+    }
+    return;
+  }
+  if (action === "ddc_input_set") {
+    if (!ddcService) {
+      pushLog("Shortcut ignored: DDC service unavailable.");
+      return;
+    }
+    const monitorId = resolveShortcutMonitorId(binding);
+    const inputSource = String(binding.inputSource ?? "").trim();
+    if (!monitorId || !inputSource) {
+      pushLog(`Shortcut ignored (${binding.accelerator}): missing monitor or input source.`);
+      return;
+    }
+    try {
+      const monitor = ddcService.setInputSource(monitorId, inputSource) as DdcMonitor;
+      patchDdcMonitorCache(monitor);
+      pushLog(`Shortcut: monitor ${monitorId} input ${inputSource}.`);
+    } catch (err) {
+      pushLog(`ERROR: Shortcut input change failed for monitor ${monitorId}: ${normalizeError(err)}`);
+    }
+  }
+}
+
 function getMixerApps(): MixerApp[] {
   const controls = new Map<string, string>([
     ["__device_volume__", "Device Volume"],
@@ -3466,7 +3896,7 @@ function wireIpc(): void {
         },
       },
     });
-    registerToggleShortcut(next.toggleShortcut);
+    registerConfiguredShortcuts();
     if (mainWindow && !mainWindow.isDestroyed()) {
       applyFlyoutSizeFromSettings();
       positionBottomRight(mainWindow, resolveUiDisplay());
@@ -3492,6 +3922,9 @@ function wireIpc(): void {
     }
     if (next.notifications.micMute === false && micMuteNotificationWindow && !micMuteNotificationWindow.isDestroyed()) {
       micMuteNotificationWindow.close();
+    }
+    if (next.notifications.presetChange === false && presetChangeNotificationWindow && !presetChangeNotificationWindow.isDestroyed()) {
+      presetChangeNotificationWindow.close();
     }
     if (next.notifications.usbInput === false && usbInputNotificationWindow && !usbInputNotificationWindow.isDestroyed()) {
       usbInputNotificationWindow.close();
@@ -3869,30 +4302,30 @@ async function showSettingsWindow(): Promise<void> {
   win.focus();
 }
 
-function registerToggleShortcut(accelerator: string): void {
-  globalShortcut.unregisterAll();
-  if (!accelerator.trim()) {
+function registerConfiguredShortcuts(): void {
+  const entries = [
+    {
+      id: "app-toggle-flyout",
+      accelerator: String(settings.toggleShortcut ?? "").trim(),
+      enabled: true,
+      trigger: () => toggleFlyout(),
+    },
+    ...(settings.shortcuts ?? []).map((shortcut) => ({
+      id: shortcut.id,
+      accelerator: shortcut.accelerator,
+      enabled: shortcut.enabled !== false,
+      trigger: () => executeShortcutBinding(shortcut),
+    })),
+  ];
+  const result = shortcutService.register(entries);
+  if (result.errors.length > 0) {
+    for (const error of result.errors) {
+      pushLog(`ERROR: ${error}`);
+      mainWindow?.webContents.send("backend:error", error);
+    }
     return;
   }
-  try {
-    const ok = globalShortcut.register(accelerator, () => toggleFlyout());
-    if (!ok) {
-      mainWindow?.webContents.send("backend:error", `Unable to register shortcut: ${accelerator}`);
-      if (isNotifEnabled("appInfo")) {
-        showSystemNotification("Control Centre Error", `Unable to register shortcut: ${accelerator}`);
-      }
-    } else {
-      mainWindow?.webContents.send("backend:status", `Shortcut registered: ${accelerator}`);
-      if (isNotifEnabled("appInfo")) {
-        showSystemNotification("Control Centre", `Shortcut registered: ${accelerator}`);
-      }
-    }
-  } catch (err) {
-    mainWindow?.webContents.send("backend:error", `Invalid shortcut: ${accelerator} (${String(err)})`);
-    if (isNotifEnabled("appInfo")) {
-      showSystemNotification("Control Centre Error", `Invalid shortcut: ${accelerator}`);
-    }
-  }
+  mainWindow?.webContents.send("backend:status", `Shortcuts registered: ${result.registered}`);
 }
 
 async function createApp(): Promise<void> {
@@ -3980,7 +4413,7 @@ async function createApp(): Promise<void> {
     }
   });
 
-  registerToggleShortcut(settings.toggleShortcut);
+  registerConfiguredShortcuts();
   // Preload settings once so first open is instant and fully painted.
   void ensureSettingsWindow();
   if (isNotifEnabled("appInfo")) {
@@ -3994,6 +4427,7 @@ app.on("before-quit", () => {
   isQuitting = true;
   clearHeadsetVolumeNotificationTimer();
   clearMicMuteNotificationTimer();
+  clearPresetChangeNotificationTimer();
   clearUsbInputNotificationTimer();
   clearAncModeNotificationTimer();
   clearConnectivityNotificationTimer();
@@ -4004,6 +4438,8 @@ app.on("before-quit", () => {
   headsetVolumePendingValue = null;
   headsetChatMixPendingValue = null;
   micMutePendingValue = null;
+  presetChangePendingValue = null;
+  presetChangeOsdLayout = null;
   usbInputPendingValue = null;
   ancModePendingValue = null;
   connectivityPendingValue = null;
@@ -4018,6 +4454,10 @@ app.on("before-quit", () => {
   if (micMuteNotificationWindow && !micMuteNotificationWindow.isDestroyed()) {
     micMuteNotificationWindow.destroy();
     micMuteNotificationWindow = null;
+  }
+  if (presetChangeNotificationWindow && !presetChangeNotificationWindow.isDestroyed()) {
+    presetChangeNotificationWindow.destroy();
+    presetChangeNotificationWindow = null;
   }
   if (usbInputNotificationWindow && !usbInputNotificationWindow.isDestroyed()) {
     usbInputNotificationWindow.destroy();
@@ -4048,7 +4488,7 @@ app.on("before-quit", () => {
     persistTimer = null;
   }
   persistNow();
-  globalShortcut.unregisterAll();
+  shortcutService.unregisterAll();
   void stopManagedDdcApi();
   backend?.stop();
 });
