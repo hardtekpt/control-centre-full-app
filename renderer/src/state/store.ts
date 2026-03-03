@@ -232,6 +232,12 @@ export function useBridgeState() {
       notifyCustom: async (title: string, body: string) => {
         await window.arctisBridge.notifyCustom(title, body);
       },
+      notifyBatteryLowTest: async () => {
+        await window.arctisBridge.notifyBatteryLowTest();
+      },
+      notifyBatterySwapTest: async () => {
+        await window.arctisBridge.notifyBatterySwapTest();
+      },
       refreshDdcMonitors: async () => {
         const result = await window.arctisBridge.getDdcMonitors();
         setDdcMonitors(Array.isArray(result.monitors) ? result.monitors : []);

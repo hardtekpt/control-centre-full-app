@@ -25,8 +25,10 @@ export const DEFAULT_SETTINGS: UiSettings = {
   themeMode: "system",
   accentColor: "",
   textScale: 100,
+  useActiveDisplay: false,
   showBatteryPercent: true,
   notificationTimeout: 5,
+  batteryLowThreshold: 15,
   flyoutWidth: 760,
   flyoutHeight: 520,
   toggleShortcut: "CommandOrControl+Shift+A",
@@ -37,7 +39,7 @@ export const DEFAULT_SETTINGS: UiSettings = {
     oled: true,
     sidetone: true,
     micMute: true,
-    chatMix: true,
+    headsetChatMix: true,
     headsetVolume: true,
     battery: true,
     appInfo: true,
@@ -78,6 +80,13 @@ export function mergeSettings(partial?: Partial<UiSettings>): UiSettings {
     micaBlur?: boolean;
     closeOnBlur?: boolean;
   };
+  const { chatMix: legacyChatMix, ...notificationsSanitized } = ((partialSanitized.notifications ?? {}) as Record<string, boolean> & {
+    chatMix?: boolean;
+  });
+  const notificationsWithLegacy: Record<string, boolean> =
+    notificationsSanitized.headsetChatMix == null && legacyChatMix != null
+      ? { ...notificationsSanitized, headsetChatMix: legacyChatMix }
+      : notificationsSanitized;
   const visibleChannels =
     partialSanitized.visibleChannels?.filter((channel): channel is ChannelKey => DEFAULT_CHANNELS.includes(channel)) ??
     DEFAULT_SETTINGS.visibleChannels;
@@ -85,12 +94,13 @@ export function mergeSettings(partial?: Partial<UiSettings>): UiSettings {
     ...DEFAULT_SETTINGS,
     ...partialSanitized,
     notificationTimeout: clamp((partialSanitized.notificationTimeout ?? DEFAULT_SETTINGS.notificationTimeout), 2, 30),
+    batteryLowThreshold: clamp((partialSanitized.batteryLowThreshold ?? DEFAULT_SETTINGS.batteryLowThreshold), 1, 100),
     flyoutWidth: clamp((partialSanitized.flyoutWidth ?? DEFAULT_SETTINGS.flyoutWidth), 320, 1000),
     flyoutHeight: clamp((partialSanitized.flyoutHeight ?? DEFAULT_SETTINGS.flyoutHeight), 260, 1200),
     visibleChannels,
     notifications: {
       ...DEFAULT_SETTINGS.notifications,
-      ...(partialSanitized.notifications ?? {}),
+      ...notificationsWithLegacy,
     },
     ddc: {
       ...DEFAULT_SETTINGS.ddc,

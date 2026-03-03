@@ -15,7 +15,7 @@ export type NotificationKey =
   | "oled"
   | "sidetone"
   | "micMute"
-  | "chatMix"
+  | "headsetChatMix"
   | "headsetVolume"
   | "battery"
   | "appInfo"
@@ -44,8 +44,10 @@ export interface UiSettings {
   themeMode: "system" | "light" | "dark";
   accentColor: string;
   textScale: number;
+  useActiveDisplay: boolean;
   showBatteryPercent: boolean;
   notificationTimeout: number;
+  batteryLowThreshold: number;
   flyoutWidth: number;
   flyoutHeight: number;
   toggleShortcut: string;

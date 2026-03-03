@@ -1,4 +1,4 @@
-import { Notification, app, BrowserWindow, globalShortcut, ipcMain, nativeTheme, screen as electronScreen, shell } from "electron";
+import { app, BrowserWindow, globalShortcut, ipcMain, nativeTheme, screen as electronScreen, shell } from "electron";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -13,6 +13,56 @@ import type { AppState, BackendCommand, ChannelKey, PresetMap, UiSettings } from
 let mainWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
 let notificationWindows: BrowserWindow[] = [];
+let headsetVolumeNotificationWindow: BrowserWindow | null = null;
+let headsetVolumeNotificationTimer: NodeJS.Timeout | null = null;
+let headsetVolumePendingValue: number | null = null;
+let headsetChatMixPendingValue: number | null = null;
+let micMuteNotificationWindow: BrowserWindow | null = null;
+let micMuteNotificationTimer: NodeJS.Timeout | null = null;
+let micMutePendingValue: boolean | null = null;
+let ancModeNotificationWindow: BrowserWindow | null = null;
+let ancModeNotificationTimer: NodeJS.Timeout | null = null;
+let ancModePendingValue: AncNotificationMode | null = null;
+let connectivityNotificationWindow: BrowserWindow | null = null;
+let connectivityNotificationTimer: NodeJS.Timeout | null = null;
+let connectivityPendingValue: ConnectivityNotificationPayload | null = null;
+let connectivityNotificationHideAt = 0;
+let batteryLowNotificationWindow: BrowserWindow | null = null;
+let batteryLowNotificationTimer: NodeJS.Timeout | null = null;
+let batteryLowPendingValue: BatteryLowNotificationPayload | null = null;
+let baseBatteryStatusNotificationWindow: BrowserWindow | null = null;
+let baseBatteryStatusNotificationTimer: NodeJS.Timeout | null = null;
+let baseBatteryStatusPendingValue: BaseBatteryStatusNotificationPayload | null = null;
+let headsetBatterySwapNotificationWindow: BrowserWindow | null = null;
+let headsetBatterySwapNotificationTimer: NodeJS.Timeout | null = null;
+let headsetBatterySwapPendingValue: HeadsetBatterySwapNotificationPayload | null = null;
+let headsetBatterySwapDelayTimer: NodeJS.Timeout | null = null;
+type AncNotificationMode = "off" | "anc" | "transparency";
+interface ConnectivityNotificationPayload {
+  connected: boolean;
+  wireless: boolean;
+  bluetooth: boolean;
+  battery: number | null;
+}
+interface BatteryLowNotificationPayload {
+  battery: number | null;
+  threshold: number;
+}
+interface BaseBatteryStatusNotificationPayload {
+  inserted: boolean;
+  battery: number | null;
+}
+interface HeadsetBatterySwapNotificationPayload {
+  headsetBattery: number | null;
+}
+type OsdLayout = { displayId: number; x: number; y: number; width: number; height: number; uiScale: number };
+let headsetVolumeOsdLayout: OsdLayout | null = null;
+let micMuteOsdLayout: OsdLayout | null = null;
+let ancModeOsdLayout: OsdLayout | null = null;
+let connectivityOsdLayout: OsdLayout | null = null;
+let batteryLowOsdLayout: OsdLayout | null = null;
+let baseBatteryStatusOsdLayout: OsdLayout | null = null;
+let headsetBatterySwapOsdLayout: OsdLayout | null = null;
 let tray: Electron.Tray | null = null;
 let settings: UiSettings = DEFAULT_SETTINGS;
 let cachedState: AppState = mergeState();
@@ -42,6 +92,35 @@ let lastHideReason = "";
 let lastToggleAt = 0;
 const DEBUG_FLYOUT = false;
 const DEBUG_DDC = false;
+const HEADSET_VOLUME_OSD_BASE_WIDTH = 210;
+const HEADSET_VOLUME_OSD_BASE_HEIGHT_SINGLE = 46;
+const HEADSET_VOLUME_OSD_BASE_HEIGHT_DOUBLE = 70;
+const MIC_MUTE_OSD_BASE_SIZE = 62;
+const MIC_MUTE_LIVE_ACCENT = "#3fcf8e";
+const MIC_MUTE_MUTED_ACCENT = "#ef5350";
+const ANC_MODE_OSD_BASE_SIZE = 62;
+const ANC_MODE_ON_ACCENT = "#3fcf8e";
+const ANC_MODE_OFF_ACCENT = "#ef5350";
+const ANC_MODE_TRANSPARENCY_ACCENT = "#6ab7ff";
+const CONNECTIVITY_OSD_BASE_SIZE = 102;
+const CONNECTIVITY_CONNECTED_ACCENT = "#3fcf8e";
+const CONNECTIVITY_DISCONNECTED_ACCENT = "#ef5350";
+const CONNECTIVITY_OSD_TIMEOUT_MS = 3000;
+const BATTERY_LOW_OSD_BASE_SIZE = 104;
+const BATTERY_LOW_OSD_ACCENT = "#ef5350";
+const BASE_BATTERY_STATUS_OSD_BASE_SIZE = 98;
+const BASE_BATTERY_INSERTED_ACCENT = "#3fcf8e";
+const BASE_BATTERY_REMOVED_ACCENT = "#ef5350";
+const HEADSET_BATTERY_SWAP_OSD_BASE_SIZE = 108;
+const HEADSET_BATTERY_SWAP_ACCENT = "#3fcf8e";
+
+const batterySwapTrack = {
+  armed: false,
+  sawDisconnect: false,
+  sawReconnectWithHigherHeadset: false,
+  headsetBeforeSwap: null as number | null,
+  baseBeforeRemoval: null as number | null,
+};
 
 
 const APP_STATE_VERSION = 1;
@@ -343,6 +422,10 @@ function isNotifEnabled(key: keyof UiSettings["notifications"]): boolean {
   return settings.notifications?.[key] !== false;
 }
 
+function isHeadsetChatMixEnabled(): boolean {
+  return settings.notifications?.headsetChatMix !== false;
+}
+
 function showSystemNotification(title: string, body: string): void {
   if (!title.trim() && !body.trim()) {
     return;
@@ -350,11 +433,2226 @@ function showSystemNotification(title: string, body: string): void {
   void showNotificationWindow(title, body);
 }
 
-function toPercentLabel(value: number | null): string {
-  if (value == null || Number.isNaN(value)) {
-    return "N/A";
+function clearHeadsetVolumeNotificationTimer(): void {
+  if (headsetVolumeNotificationTimer) {
+    clearTimeout(headsetVolumeNotificationTimer);
+    headsetVolumeNotificationTimer = null;
   }
-  return `${Math.max(0, Math.min(100, Math.round(value)))}%`;
+}
+
+function clearMicMuteNotificationTimer(): void {
+  if (micMuteNotificationTimer) {
+    clearTimeout(micMuteNotificationTimer);
+    micMuteNotificationTimer = null;
+  }
+}
+
+function clearAncModeNotificationTimer(): void {
+  if (ancModeNotificationTimer) {
+    clearTimeout(ancModeNotificationTimer);
+    ancModeNotificationTimer = null;
+  }
+}
+
+function clearConnectivityNotificationTimer(): void {
+  if (connectivityNotificationTimer) {
+    clearTimeout(connectivityNotificationTimer);
+    connectivityNotificationTimer = null;
+  }
+  connectivityNotificationHideAt = 0;
+}
+
+function clearBatteryLowNotificationTimer(): void {
+  if (batteryLowNotificationTimer) {
+    clearTimeout(batteryLowNotificationTimer);
+    batteryLowNotificationTimer = null;
+  }
+}
+
+function clearBaseBatteryStatusNotificationTimer(): void {
+  if (baseBatteryStatusNotificationTimer) {
+    clearTimeout(baseBatteryStatusNotificationTimer);
+    baseBatteryStatusNotificationTimer = null;
+  }
+}
+
+function clearHeadsetBatterySwapNotificationTimer(): void {
+  if (headsetBatterySwapNotificationTimer) {
+    clearTimeout(headsetBatterySwapNotificationTimer);
+    headsetBatterySwapNotificationTimer = null;
+  }
+}
+
+function clearHeadsetBatterySwapDelayTimer(): void {
+  if (headsetBatterySwapDelayTimer) {
+    clearTimeout(headsetBatterySwapDelayTimer);
+    headsetBatterySwapDelayTimer = null;
+  }
+}
+
+function scheduleHeadsetVolumeNotificationClose(win: BrowserWindow): void {
+  clearHeadsetVolumeNotificationTimer();
+  headsetVolumeNotificationTimer = setTimeout(() => {
+    headsetVolumeNotificationTimer = null;
+    if (!win.isDestroyed()) {
+      win.close();
+    }
+  }, Math.max(2, settings.notificationTimeout) * 1000);
+}
+
+function scheduleMicMuteNotificationClose(win: BrowserWindow): void {
+  clearMicMuteNotificationTimer();
+  micMuteNotificationTimer = setTimeout(() => {
+    micMuteNotificationTimer = null;
+    if (!win.isDestroyed()) {
+      win.close();
+    }
+  }, Math.max(2, settings.notificationTimeout) * 1000);
+}
+
+function scheduleAncModeNotificationClose(win: BrowserWindow): void {
+  clearAncModeNotificationTimer();
+  ancModeNotificationTimer = setTimeout(() => {
+    ancModeNotificationTimer = null;
+    if (!win.isDestroyed()) {
+      win.close();
+    }
+  }, Math.max(2, settings.notificationTimeout) * 1000);
+}
+
+function scheduleConnectivityNotificationClose(win: BrowserWindow): void {
+  clearConnectivityNotificationTimer();
+  connectivityNotificationHideAt = Date.now() + CONNECTIVITY_OSD_TIMEOUT_MS;
+  connectivityNotificationTimer = setTimeout(() => {
+    connectivityNotificationTimer = null;
+    connectivityNotificationHideAt = 0;
+    if (!win.isDestroyed()) {
+      win.close();
+    }
+  }, CONNECTIVITY_OSD_TIMEOUT_MS);
+}
+
+function scheduleBatteryLowNotificationClose(win: BrowserWindow): void {
+  clearBatteryLowNotificationTimer();
+  batteryLowNotificationTimer = setTimeout(() => {
+    batteryLowNotificationTimer = null;
+    if (!win.isDestroyed()) {
+      win.close();
+    }
+  }, Math.max(2, settings.notificationTimeout) * 1000);
+}
+
+function scheduleBaseBatteryStatusNotificationClose(win: BrowserWindow): void {
+  clearBaseBatteryStatusNotificationTimer();
+  baseBatteryStatusNotificationTimer = setTimeout(() => {
+    baseBatteryStatusNotificationTimer = null;
+    if (!win.isDestroyed()) {
+      win.close();
+    }
+  }, Math.max(2, settings.notificationTimeout) * 1000);
+}
+
+function scheduleHeadsetBatterySwapNotificationClose(win: BrowserWindow): void {
+  clearHeadsetBatterySwapNotificationTimer();
+  headsetBatterySwapNotificationTimer = setTimeout(() => {
+    headsetBatterySwapNotificationTimer = null;
+    if (!win.isDestroyed()) {
+      win.close();
+    }
+  }, Math.max(2, settings.notificationTimeout) * 1000);
+}
+
+function clampNumber(value: number, low: number, high: number): number {
+  return Math.min(high, Math.max(low, value));
+}
+
+function resolveUiDisplay(): Electron.Display {
+  if (settings.useActiveDisplay !== true) {
+    return electronScreen.getPrimaryDisplay();
+  }
+  const focused = BrowserWindow.getFocusedWindow();
+  if (focused && !focused.isDestroyed()) {
+    return electronScreen.getDisplayMatching(focused.getBounds());
+  }
+  const cursorPoint = electronScreen.getCursorScreenPoint();
+  return electronScreen.getDisplayNearestPoint(cursorPoint);
+}
+
+function resolveHeadsetVolumeOsdLayout(showChatMix: boolean): OsdLayout {
+  const display = resolveUiDisplay();
+  const workArea = display.workArea;
+  const resolutionScale = clampNumber(Math.min(workArea.width / 1920, workArea.height / 1080), 0.82, 1.18);
+  const width = Math.max(188, Math.round(HEADSET_VOLUME_OSD_BASE_WIDTH * resolutionScale));
+  const baseHeight = showChatMix ? HEADSET_VOLUME_OSD_BASE_HEIGHT_DOUBLE : HEADSET_VOLUME_OSD_BASE_HEIGHT_SINGLE;
+  const height = Math.max(42, Math.round(baseHeight * resolutionScale));
+  const margin = Math.max(10, Math.round(12 * resolutionScale));
+  const x = Math.round(workArea.x + (workArea.width - width) / 2);
+  const y = workArea.y + workArea.height - height - margin;
+  return {
+    displayId: display.id,
+    x,
+    y,
+    width,
+    height,
+    uiScale: resolutionScale,
+  };
+}
+
+function resolveMicMuteOsdLayout(): OsdLayout {
+  const display = resolveUiDisplay();
+  const workArea = display.workArea;
+  const resolutionScale = clampNumber(Math.min(workArea.width / 1920, workArea.height / 1080), 0.82, 1.18);
+  const size = Math.max(52, Math.round(MIC_MUTE_OSD_BASE_SIZE * resolutionScale));
+  const margin = Math.max(10, Math.round(12 * resolutionScale));
+  const x = Math.round(workArea.x + (workArea.width - size) / 2);
+  const y = workArea.y + workArea.height - size - margin;
+  return {
+    displayId: display.id,
+    x,
+    y,
+    width: size,
+    height: size,
+    uiScale: resolutionScale,
+  };
+}
+
+function resolveAncModeOsdLayout(): OsdLayout {
+  const display = resolveUiDisplay();
+  const workArea = display.workArea;
+  const resolutionScale = clampNumber(Math.min(workArea.width / 1920, workArea.height / 1080), 0.82, 1.18);
+  const size = Math.max(52, Math.round(ANC_MODE_OSD_BASE_SIZE * resolutionScale));
+  const margin = Math.max(10, Math.round(12 * resolutionScale));
+  const x = Math.round(workArea.x + (workArea.width - size) / 2);
+  const y = workArea.y + workArea.height - size - margin;
+  return {
+    displayId: display.id,
+    x,
+    y,
+    width: size,
+    height: size,
+    uiScale: resolutionScale,
+  };
+}
+
+function resolveConnectivityOsdLayout(): OsdLayout {
+  const display = resolveUiDisplay();
+  const workArea = display.workArea;
+  const resolutionScale = clampNumber(Math.min(workArea.width / 1920, workArea.height / 1080), 0.82, 1.18);
+  const size = Math.max(86, Math.round(CONNECTIVITY_OSD_BASE_SIZE * resolutionScale));
+  const margin = Math.max(10, Math.round(12 * resolutionScale));
+  const x = Math.round(workArea.x + (workArea.width - size) / 2);
+  const y = workArea.y + workArea.height - size - margin;
+  return {
+    displayId: display.id,
+    x,
+    y,
+    width: size,
+    height: size,
+    uiScale: resolutionScale,
+  };
+}
+
+function resolveBatteryLowOsdLayout(): OsdLayout {
+  const display = resolveUiDisplay();
+  const workArea = display.workArea;
+  const resolutionScale = clampNumber(Math.min(workArea.width / 1920, workArea.height / 1080), 0.82, 1.18);
+  const size = Math.max(88, Math.round(BATTERY_LOW_OSD_BASE_SIZE * resolutionScale));
+  const margin = Math.max(10, Math.round(12 * resolutionScale));
+  const x = Math.round(workArea.x + (workArea.width - size) / 2);
+  const y = workArea.y + workArea.height - size - margin;
+  return {
+    displayId: display.id,
+    x,
+    y,
+    width: size,
+    height: size,
+    uiScale: resolutionScale,
+  };
+}
+
+function resolveBaseBatteryStatusOsdLayout(): OsdLayout {
+  const display = resolveUiDisplay();
+  const workArea = display.workArea;
+  const resolutionScale = clampNumber(Math.min(workArea.width / 1920, workArea.height / 1080), 0.82, 1.18);
+  const size = Math.max(82, Math.round(BASE_BATTERY_STATUS_OSD_BASE_SIZE * resolutionScale));
+  const margin = Math.max(10, Math.round(12 * resolutionScale));
+  const x = Math.round(workArea.x + (workArea.width - size) / 2);
+  const y = workArea.y + workArea.height - size - margin;
+  return {
+    displayId: display.id,
+    x,
+    y,
+    width: size,
+    height: size,
+    uiScale: resolutionScale,
+  };
+}
+
+function resolveHeadsetBatterySwapOsdLayout(): OsdLayout {
+  const display = resolveUiDisplay();
+  const workArea = display.workArea;
+  const resolutionScale = clampNumber(Math.min(workArea.width / 1920, workArea.height / 1080), 0.82, 1.18);
+  const size = Math.max(90, Math.round(HEADSET_BATTERY_SWAP_OSD_BASE_SIZE * resolutionScale));
+  const margin = Math.max(10, Math.round(12 * resolutionScale));
+  const x = Math.round(workArea.x + (workArea.width - size) / 2);
+  const y = workArea.y + workArea.height - size - margin;
+  return {
+    displayId: display.id,
+    x,
+    y,
+    width: size,
+    height: size,
+    uiScale: resolutionScale,
+  };
+}
+
+function updateHeadsetVolumeNotificationScale(win: BrowserWindow, uiScale: number): void {
+  const scale = clampNumber(uiScale, 0.75, 1.5).toFixed(4);
+  void win.webContents
+    .executeJavaScript(`window.__setHeadsetVolumeScale?.(${scale});`, true)
+    .catch(() => undefined);
+}
+
+function updateHeadsetVolumeNotificationAccent(win: BrowserWindow, accent: string): void {
+  const safeAccent = String(accent || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  if (!safeAccent) {
+    return;
+  }
+  void win.webContents
+    .executeJavaScript(`window.__setHeadsetAccent?.('${safeAccent}');`, true)
+    .catch(() => undefined);
+}
+
+function resolveHeadsetVolumeNotificationPalette(theme: { isDark: boolean; accent: string }): { panelBg: string; textColor: string } {
+  const isDark = settings.themeMode === "system" ? theme.isDark : settings.themeMode === "dark";
+  return {
+    // Match main renderer background tokens.
+    panelBg: isDark ? "#242424" : "#f2f2f2",
+    textColor: isDark ? "rgba(255,255,255,0.94)" : "rgba(17,17,17,0.94)",
+  };
+}
+
+function updateHeadsetVolumeNotificationPalette(win: BrowserWindow, palette: { panelBg: string; textColor: string }): void {
+  const safeBg = String(palette.panelBg || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const safeText = String(palette.textColor || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  if (!safeBg || !safeText) {
+    return;
+  }
+  win.setBackgroundColor(safeBg);
+  void win.webContents
+    .executeJavaScript(`window.__setHeadsetPalette?.('${safeBg}','${safeText}');`, true)
+    .catch(() => undefined);
+}
+
+function applyHeadsetVolumeOsdLayout(
+  win: BrowserWindow,
+  layout: OsdLayout,
+): void {
+  win.setMinimumSize(layout.width, layout.height);
+  win.setMaximumSize(layout.width, layout.height);
+  const bounds = win.getBounds();
+  if (bounds.x !== layout.x || bounds.y !== layout.y || bounds.width !== layout.width || bounds.height !== layout.height) {
+    win.setBounds(
+      {
+        x: layout.x,
+        y: layout.y,
+        width: layout.width,
+        height: layout.height,
+      },
+      false,
+    );
+  }
+  updateHeadsetVolumeNotificationScale(win, layout.uiScale);
+}
+
+function toNullablePercent(value: number | null | undefined): number | null {
+  if (value == null || Number.isNaN(value)) {
+    return null;
+  }
+  return clampPercent(value);
+}
+
+function toOsdValueLabel(value: number | null): string {
+  return value == null ? "--" : String(value);
+}
+
+function updateHeadsetVolumeNotificationUi(
+  win: BrowserWindow,
+  volume: number | null,
+  chatMix: number | null,
+  showChatMix: boolean,
+): void {
+  const jsVolume = volume == null ? "null" : String(clampPercent(volume));
+  const jsChatMix = !showChatMix || chatMix == null ? "null" : String(clampPercent(chatMix));
+  const jsShowChatMix = showChatMix ? "true" : "false";
+  void win.webContents
+    .executeJavaScript(`window.__setHeadsetShowChatMix?.(${jsShowChatMix});window.__setHeadsetAudio?.(${jsVolume}, ${jsChatMix});`, true)
+    .catch(() => undefined);
+}
+
+interface HeadsetAudioNotificationUpdate {
+  volume?: number | null;
+  chatMix?: number | null;
+}
+
+async function showHeadsetVolumeNotification(update: HeadsetAudioNotificationUpdate): Promise<void> {
+  const showChatMix = isHeadsetChatMixEnabled();
+  if ("volume" in update) {
+    headsetVolumePendingValue = toNullablePercent(update.volume);
+  }
+  if ("chatMix" in update) {
+    headsetChatMixPendingValue = toNullablePercent(update.chatMix);
+  }
+  if (headsetVolumePendingValue == null) {
+    headsetVolumePendingValue = toNullablePercent(cachedState.headset_volume_percent);
+  }
+  if (headsetChatMixPendingValue == null) {
+    headsetChatMixPendingValue = toNullablePercent(cachedState.chat_mix_balance);
+  }
+  const volume = headsetVolumePendingValue;
+  const chatMix = headsetChatMixPendingValue;
+  if (volume == null && chatMix == null) {
+    return;
+  }
+  const nextLayout = resolveHeadsetVolumeOsdLayout(showChatMix);
+  const theme = await getThemePayload();
+  const accent = settings.accentColor.trim() || theme.accent;
+  const palette = resolveHeadsetVolumeNotificationPalette(theme);
+  if (headsetVolumeNotificationWindow && !headsetVolumeNotificationWindow.isDestroyed()) {
+    const win = headsetVolumeNotificationWindow;
+    if (!win.isVisible()) {
+      applyHeadsetVolumeOsdLayout(win, nextLayout);
+      headsetVolumeOsdLayout = nextLayout;
+      win.showInactive();
+    }
+    updateHeadsetVolumeNotificationPalette(win, palette);
+    updateHeadsetVolumeNotificationAccent(win, accent);
+    updateHeadsetVolumeNotificationUi(win, headsetVolumePendingValue, headsetChatMixPendingValue, showChatMix);
+    scheduleHeadsetVolumeNotificationClose(win);
+    return;
+  }
+
+  const volumeFill = volume ?? 0;
+  const chatMixFill = showChatMix ? chatMix ?? 0 : 0;
+  const volumeValue = toOsdValueLabel(volume);
+  const chatMixValue = showChatMix ? toOsdValueLabel(chatMix) : "--";
+  const shellClass = showChatMix ? "shell" : "shell single";
+  const html = `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data:;" />
+      <style>
+        :root {
+          color-scheme: dark;
+          --s: ${nextLayout.uiScale.toFixed(4)};
+          --accent: ${accent};
+          --panel-bg: ${palette.panelBg};
+          --text-color: ${palette.textColor};
+        }
+        html, body {
+          margin: 0;
+          width: 100%;
+          height: 100%;
+          background: var(--panel-bg);
+          overflow: hidden;
+          font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+        }
+        .shell {
+          width: 100%;
+          height: 100%;
+          box-sizing: border-box;
+          border-radius: calc(10px * var(--s));
+          border: 1px solid rgba(255,255,255,0.14);
+          background: var(--panel-bg);
+          box-shadow: 0 8px 18px rgba(0,0,0,0.38);
+          display: grid;
+          grid-template-rows: 1fr 1fr;
+          row-gap: calc(3px * var(--s));
+          padding: calc(4px * var(--s));
+        }
+        .shell.single {
+          grid-template-rows: 1fr;
+          row-gap: 0;
+        }
+        .row {
+          display: grid;
+          grid-template-columns: calc(14px * var(--s)) minmax(0, 1fr) calc(28px * var(--s));
+          column-gap: calc(5px * var(--s));
+          align-items: center;
+          height: 100%;
+          min-width: 0;
+        }
+        .icon {
+          width: calc(14px * var(--s));
+          height: calc(14px * var(--s));
+          color: var(--text-color);
+          display: grid;
+          place-items: center;
+          line-height: 0;
+        }
+        .icon svg {
+          width: 100%;
+          height: 100%;
+          display: block;
+        }
+        .bar {
+          position: relative;
+          height: calc(4px * var(--s));
+          border-radius: 999px;
+          overflow: hidden;
+          background: rgba(255,255,255,0.28);
+        }
+        .fill {
+          position: absolute;
+          left: 0;
+          top: 0;
+          bottom: 0;
+          width: 0%;
+          background: var(--accent);
+          transition: width 80ms linear;
+        }
+        .value {
+          width: 2ch;
+          min-width: 2ch;
+          text-align: center;
+          justify-self: center;
+          color: var(--text-color);
+          font-size: calc(13px * var(--s));
+          font-weight: 600;
+          line-height: 1;
+          font-variant-numeric: tabular-nums;
+          font-feature-settings: "tnum";
+        }
+      </style>
+    </head>
+    <body>
+      <div id="shell" class="${shellClass}">
+        <div class="row">
+          <div class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <path d="M4 13a8 8 0 1 1 16 0v5a2 2 0 0 1-2 2h-1v-6h1v-1a6 6 0 1 0-12 0v1h1v6H6a2 2 0 0 1-2-2z" fill="currentColor" />
+            </svg>
+          </div>
+          <div class="bar" aria-hidden="true"><div id="volFill" class="fill" style="width: ${volumeFill}%"></div></div>
+          <div id="volValue" class="value">${volumeValue}</div>
+        </div>
+        <div id="mixRow" class="row">
+          <div class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <path d="M5 5h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-8l-4 3v-3H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z" fill="currentColor" />
+              <path d="M8 10h8M8 13h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+            </svg>
+          </div>
+          <div class="bar" aria-hidden="true"><div id="mixFill" class="fill" style="width: ${chatMixFill}%"></div></div>
+          <div id="mixValue" class="value">${chatMixValue}</div>
+        </div>
+      </div>
+      <script>
+        (function () {
+          const clamp = (v) => Math.max(0, Math.min(100, Math.round(Number(v) || 0)));
+          const volFillEl = document.getElementById("volFill");
+          const volValueEl = document.getElementById("volValue");
+          const shellEl = document.getElementById("shell");
+          const mixRowEl = document.getElementById("mixRow");
+          const mixFillEl = document.getElementById("mixFill");
+          const mixValueEl = document.getElementById("mixValue");
+          const applyValue = (fillEl, valueEl, next) => {
+            if (!fillEl || !valueEl) {
+              return;
+            }
+            if (next == null || Number.isNaN(Number(next))) {
+              fillEl.style.width = "0%";
+              valueEl.textContent = "--";
+              return;
+            }
+            const value = clamp(next);
+            fillEl.style.width = value + "%";
+            valueEl.textContent = String(value);
+          };
+          window.__setHeadsetPalette = (bg, text) => {
+            const nextBg = String(bg || "").trim();
+            const nextText = String(text || "").trim();
+            if (nextBg) document.documentElement.style.setProperty("--panel-bg", nextBg);
+            if (nextText) document.documentElement.style.setProperty("--text-color", nextText);
+          };
+          window.__setHeadsetVolumeScale = (s) => {
+            const nextScale = Math.max(0.75, Math.min(1.5, Number(s) || 1));
+            document.documentElement.style.setProperty("--s", String(nextScale));
+          };
+          window.__setHeadsetAccent = (value) => {
+            const next = String(value || "").trim();
+            if (!next) return;
+            document.documentElement.style.setProperty("--accent", next);
+          };
+          window.__setHeadsetShowChatMix = (enabled) => {
+            const show = Boolean(enabled);
+            if (shellEl) shellEl.classList.toggle("single", !show);
+            if (mixRowEl) mixRowEl.style.display = show ? "grid" : "none";
+          };
+          window.__setHeadsetAudio = (nextVolume, nextChatMix) => {
+            if (nextVolume !== undefined) applyValue(volFillEl, volValueEl, nextVolume);
+            if (nextChatMix !== undefined) applyValue(mixFillEl, mixValueEl, nextChatMix);
+          };
+          window.__setHeadsetVolume = (next) => window.__setHeadsetAudio(next, undefined);
+          window.__setHeadsetChatMix = (next) => window.__setHeadsetAudio(undefined, next);
+          window.__setHeadsetShowChatMix(${showChatMix ? "true" : "false"});
+        })();
+      </script>
+    </body>
+  </html>`;
+
+  const win = new BrowserWindow({
+    width: nextLayout.width,
+    height: nextLayout.height,
+    minWidth: nextLayout.width,
+    maxWidth: nextLayout.width,
+    minHeight: nextLayout.height,
+    maxHeight: nextLayout.height,
+    show: false,
+    frame: false,
+    transparent: false,
+    backgroundColor: palette.panelBg,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    focusable: false,
+    hasShadow: true,
+  });
+
+  headsetVolumeNotificationWindow = win;
+  headsetVolumeOsdLayout = nextLayout;
+  await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  win.setAlwaysOnTop(true, "screen-saver");
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+  const showVolumeNotification = () => {
+    if (win.isDestroyed()) {
+      return;
+    }
+    const layout = headsetVolumeOsdLayout ?? nextLayout;
+    applyHeadsetVolumeOsdLayout(win, layout);
+    updateHeadsetVolumeNotificationPalette(win, palette);
+    win.showInactive();
+    updateHeadsetVolumeNotificationAccent(win, accent);
+    updateHeadsetVolumeNotificationUi(win, headsetVolumePendingValue, headsetChatMixPendingValue, showChatMix);
+    scheduleHeadsetVolumeNotificationClose(win);
+  };
+
+  win.once("ready-to-show", showVolumeNotification);
+  win.webContents.once("did-finish-load", () => {
+    if (!win.isVisible()) {
+      showVolumeNotification();
+    }
+  });
+  win.on("closed", () => {
+    if (headsetVolumeNotificationWindow === win) {
+      headsetVolumeNotificationWindow = null;
+    }
+    headsetVolumePendingValue = null;
+    headsetChatMixPendingValue = null;
+    headsetVolumeOsdLayout = null;
+    clearHeadsetVolumeNotificationTimer();
+  });
+}
+
+function updateMicMuteNotificationScale(win: BrowserWindow, uiScale: number): void {
+  const scale = clampNumber(uiScale, 0.75, 1.5).toFixed(4);
+  void win.webContents
+    .executeJavaScript(`window.__setMicMuteScale?.(${scale});`, true)
+    .catch(() => undefined);
+}
+
+function updateMicMuteNotificationPalette(win: BrowserWindow, palette: { panelBg: string; textColor: string }): void {
+  const safeBg = String(palette.panelBg || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const safeText = String(palette.textColor || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  if (!safeBg || !safeText) {
+    return;
+  }
+  void win.webContents
+    .executeJavaScript(`window.__setMicMutePalette?.('${safeBg}','${safeText}');`, true)
+    .catch(() => undefined);
+}
+
+function updateMicMuteNotificationUi(win: BrowserWindow, muted: boolean): void {
+  void win.webContents
+    .executeJavaScript(`window.__setMicMuteState?.(${muted ? "true" : "false"});`, true)
+    .catch(() => undefined);
+}
+
+function applyMicMuteOsdLayout(win: BrowserWindow, layout: OsdLayout): void {
+  win.setMinimumSize(layout.width, layout.height);
+  win.setMaximumSize(layout.width, layout.height);
+  const bounds = win.getBounds();
+  if (bounds.x !== layout.x || bounds.y !== layout.y || bounds.width !== layout.width || bounds.height !== layout.height) {
+    win.setBounds(
+      {
+        x: layout.x,
+        y: layout.y,
+        width: layout.width,
+        height: layout.height,
+      },
+      false,
+    );
+  }
+  updateMicMuteNotificationScale(win, layout.uiScale);
+}
+
+async function showMicMuteNotification(muted: boolean): Promise<void> {
+  micMutePendingValue = muted;
+  const nextLayout = resolveMicMuteOsdLayout();
+  const theme = await getThemePayload();
+  const palette = resolveHeadsetVolumeNotificationPalette(theme);
+  const accent = muted ? MIC_MUTE_MUTED_ACCENT : MIC_MUTE_LIVE_ACCENT;
+
+  if (micMuteNotificationWindow && !micMuteNotificationWindow.isDestroyed()) {
+    const win = micMuteNotificationWindow;
+    if (!win.isVisible()) {
+      applyMicMuteOsdLayout(win, nextLayout);
+      micMuteOsdLayout = nextLayout;
+      win.showInactive();
+    }
+    updateMicMuteNotificationPalette(win, palette);
+    updateMicMuteNotificationUi(win, micMutePendingValue ?? muted);
+    scheduleMicMuteNotificationClose(win);
+    return;
+  }
+
+  const html = `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data:;" />
+      <style>
+        :root {
+          color-scheme: dark;
+          --s: ${nextLayout.uiScale.toFixed(4)};
+          --panel-bg: ${palette.panelBg};
+          --text-color: ${palette.textColor};
+          --accent: ${accent};
+        }
+        html, body {
+          margin: 0;
+          width: 100%;
+          height: 100%;
+          background: transparent;
+          overflow: hidden;
+          font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+        }
+        .shell {
+          width: 100%;
+          height: 100%;
+          box-sizing: border-box;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.14);
+          background: var(--panel-bg);
+          box-shadow: 0 8px 18px rgba(0,0,0,0.38);
+          display: grid;
+          place-items: center;
+        }
+        .icon {
+          width: calc(30px * var(--s));
+          height: calc(30px * var(--s));
+          color: var(--accent);
+          display: grid;
+          place-items: center;
+          line-height: 0;
+        }
+        .icon svg {
+          width: 100%;
+          height: 100%;
+          display: block;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="shell" aria-label="Microphone mute status">
+        <div class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="30" height="30">
+            <path id="mic-on" d="M12 14a3 3 0 0 0 3-3V7a3 3 0 1 0-6 0v4a3 3 0 0 0 3 3zm5-3a1 1 0 1 0-2 0 3 3 0 0 1-6 0 1 1 0 1 0-2 0 5 5 0 0 0 4 4.9V19H9a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2h-2v-3.1A5 5 0 0 0 17 11z" fill="currentColor" />
+            <path id="mic-off" d="M5.7 4.3a1 1 0 0 0-1.4 1.4l4.9 4.9V11a3 3 0 0 0 4.4 2.7l1.6 1.6a3 3 0 0 1-2.2.8 3 3 0 0 1-3-3 1 1 0 0 0-2 0 5 5 0 0 0 4 4.9V19H9a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2h-2v-1.1c1-.2 1.8-.6 2.6-1.2l2.7 2.7a1 1 0 0 0 1.4-1.4L5.7 4.3zM14 11a2 2 0 0 1-.2.8L11.2 9.2V7a1.8 1.8 0 1 1 3.6 0V11z" fill="currentColor" />
+          </svg>
+        </div>
+      </div>
+      <script>
+        (function () {
+          const root = document.documentElement;
+          const micOn = document.getElementById("mic-on");
+          const micOff = document.getElementById("mic-off");
+          const liveAccent = "${MIC_MUTE_LIVE_ACCENT}";
+          const mutedAccent = "${MIC_MUTE_MUTED_ACCENT}";
+          const applyState = (muted) => {
+            const isMuted = Boolean(muted);
+            root.style.setProperty("--accent", isMuted ? mutedAccent : liveAccent);
+            if (micOn) micOn.style.display = isMuted ? "none" : "block";
+            if (micOff) micOff.style.display = isMuted ? "block" : "none";
+          };
+          window.__setMicMutePalette = (bg, text) => {
+            const nextBg = String(bg || "").trim();
+            const nextText = String(text || "").trim();
+            if (nextBg) root.style.setProperty("--panel-bg", nextBg);
+            if (nextText) root.style.setProperty("--text-color", nextText);
+          };
+          window.__setMicMuteScale = (s) => {
+            const nextScale = Math.max(0.75, Math.min(1.5, Number(s) || 1));
+            root.style.setProperty("--s", String(nextScale));
+          };
+          window.__setMicMuteState = (next) => applyState(next);
+          applyState(${muted ? "true" : "false"});
+        })();
+      </script>
+    </body>
+  </html>`;
+
+  const win = new BrowserWindow({
+    width: nextLayout.width,
+    height: nextLayout.height,
+    minWidth: nextLayout.width,
+    maxWidth: nextLayout.width,
+    minHeight: nextLayout.height,
+    maxHeight: nextLayout.height,
+    show: false,
+    frame: false,
+    transparent: true,
+    backgroundColor: "#00000000",
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    focusable: false,
+    hasShadow: false,
+  });
+
+  micMuteNotificationWindow = win;
+  micMuteOsdLayout = nextLayout;
+  await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  win.setAlwaysOnTop(true, "screen-saver");
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+  const showMicNotification = () => {
+    if (win.isDestroyed()) {
+      return;
+    }
+    const layout = micMuteOsdLayout ?? nextLayout;
+    applyMicMuteOsdLayout(win, layout);
+    updateMicMuteNotificationPalette(win, palette);
+    win.showInactive();
+    updateMicMuteNotificationUi(win, micMutePendingValue ?? muted);
+    scheduleMicMuteNotificationClose(win);
+  };
+
+  win.once("ready-to-show", showMicNotification);
+  win.webContents.once("did-finish-load", () => {
+    if (!win.isVisible()) {
+      showMicNotification();
+    }
+  });
+  win.on("closed", () => {
+    if (micMuteNotificationWindow === win) {
+      micMuteNotificationWindow = null;
+    }
+    micMutePendingValue = null;
+    micMuteOsdLayout = null;
+    clearMicMuteNotificationTimer();
+  });
+}
+
+function normalizeAncNotificationMode(rawValue: string | null | undefined): AncNotificationMode | null {
+  const value = String(rawValue ?? "")
+    .trim()
+    .toLowerCase();
+  if (!value) {
+    return null;
+  }
+  if (value === "off") {
+    return "off";
+  }
+  if (value === "anc" || value === "on") {
+    return "anc";
+  }
+  if (value === "transparency" || value === "transparent" || value === "passthrough" || value === "pass-through") {
+    return "transparency";
+  }
+  return null;
+}
+
+function updateAncModeNotificationScale(win: BrowserWindow, uiScale: number): void {
+  const scale = clampNumber(uiScale, 0.75, 1.5).toFixed(4);
+  void win.webContents
+    .executeJavaScript(`window.__setAncModeScale?.(${scale});`, true)
+    .catch(() => undefined);
+}
+
+function updateAncModeNotificationPalette(win: BrowserWindow, palette: { panelBg: string; textColor: string }): void {
+  const safeBg = String(palette.panelBg || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const safeText = String(palette.textColor || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  if (!safeBg || !safeText) {
+    return;
+  }
+  void win.webContents
+    .executeJavaScript(`window.__setAncModePalette?.('${safeBg}','${safeText}');`, true)
+    .catch(() => undefined);
+}
+
+function updateAncModeNotificationUi(win: BrowserWindow, mode: AncNotificationMode): void {
+  const safeMode = mode === "off" || mode === "anc" || mode === "transparency" ? mode : "off";
+  void win.webContents
+    .executeJavaScript(`window.__setAncModeState?.('${safeMode}');`, true)
+    .catch(() => undefined);
+}
+
+function applyAncModeOsdLayout(win: BrowserWindow, layout: OsdLayout): void {
+  win.setMinimumSize(layout.width, layout.height);
+  win.setMaximumSize(layout.width, layout.height);
+  const bounds = win.getBounds();
+  if (bounds.x !== layout.x || bounds.y !== layout.y || bounds.width !== layout.width || bounds.height !== layout.height) {
+    win.setBounds(
+      {
+        x: layout.x,
+        y: layout.y,
+        width: layout.width,
+        height: layout.height,
+      },
+      false,
+    );
+  }
+  updateAncModeNotificationScale(win, layout.uiScale);
+}
+
+async function showAncModeNotification(rawMode: string): Promise<void> {
+  const mode = normalizeAncNotificationMode(rawMode);
+  if (!mode) {
+    return;
+  }
+  ancModePendingValue = mode;
+  const nextLayout = resolveAncModeOsdLayout();
+  const theme = await getThemePayload();
+  const palette = resolveHeadsetVolumeNotificationPalette(theme);
+  const html = `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data:;" />
+      <style>
+        :root {
+          color-scheme: dark;
+          --s: ${nextLayout.uiScale.toFixed(4)};
+          --panel-bg: ${palette.panelBg};
+          --text-color: ${palette.textColor};
+          --anc-off: ${ANC_MODE_OFF_ACCENT};
+          --anc-on: ${ANC_MODE_ON_ACCENT};
+          --anc-pass: ${ANC_MODE_TRANSPARENCY_ACCENT};
+          --accent: var(--anc-off);
+        }
+        html, body {
+          margin: 0;
+          width: 100%;
+          height: 100%;
+          background: transparent;
+          overflow: hidden;
+          font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+        }
+        .shell {
+          width: 100%;
+          height: 100%;
+          box-sizing: border-box;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.14);
+          background: var(--panel-bg);
+          box-shadow: 0 8px 18px rgba(0,0,0,0.38);
+          display: grid;
+          place-items: center;
+        }
+        .content {
+          color: var(--accent);
+          display: grid;
+          place-items: center;
+          row-gap: calc(2px * var(--s));
+          line-height: 1;
+        }
+        .label {
+          font-size: calc(16px * var(--s));
+          font-weight: 700;
+          letter-spacing: 0.03em;
+        }
+        .icon {
+          width: calc(20px * var(--s));
+          height: calc(20px * var(--s));
+          display: none;
+        }
+        .icon svg {
+          width: 100%;
+          height: 100%;
+          display: block;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="shell" aria-label="ANC status">
+        <div id="content" class="content">
+          <div id="label" class="label">ANC</div>
+          <div id="icon" class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="26" height="26">
+              <path d="M4 9h11l-2.2-2.2a1 1 0 0 1 1.4-1.4l3.9 3.9a1 1 0 0 1 0 1.4l-3.9 3.9a1 1 0 0 1-1.4-1.4L15 11H4a1 1 0 1 1 0-2zm16 6H9l2.2 2.2a1 1 0 1 1-1.4 1.4l-3.9-3.9a1 1 0 0 1 0-1.4l3.9-3.9a1 1 0 1 1 1.4 1.4L9 13h11a1 1 0 1 1 0 2z" fill="currentColor" />
+            </svg>
+          </div>
+        </div>
+      </div>
+      <script>
+        (function () {
+          const root = document.documentElement;
+          const label = document.getElementById("label");
+          const icon = document.getElementById("icon");
+          const applyState = (mode) => {
+            const next = String(mode || "").trim().toLowerCase();
+            if (next === "anc") {
+              root.style.setProperty("--accent", "var(--anc-on)");
+              if (label) label.style.display = "block";
+              if (icon) icon.style.display = "none";
+              if (label) label.textContent = "ANC";
+              return;
+            }
+            if (next === "transparency") {
+              root.style.setProperty("--accent", "var(--anc-pass)");
+              if (label) label.style.display = "none";
+              if (icon) icon.style.display = "block";
+              return;
+            }
+            root.style.setProperty("--accent", "var(--anc-off)");
+            if (label) label.style.display = "block";
+            if (icon) icon.style.display = "none";
+            if (label) label.textContent = "ANC";
+          };
+          window.__setAncModePalette = (bg, text) => {
+            const nextBg = String(bg || "").trim();
+            const nextText = String(text || "").trim();
+            if (nextBg) root.style.setProperty("--panel-bg", nextBg);
+            if (nextText) root.style.setProperty("--text-color", nextText);
+          };
+          window.__setAncModeScale = (s) => {
+            const nextScale = Math.max(0.75, Math.min(1.5, Number(s) || 1));
+            root.style.setProperty("--s", String(nextScale));
+          };
+          window.__setAncModeState = (nextMode) => applyState(nextMode);
+          applyState("${mode}");
+        })();
+      </script>
+    </body>
+  </html>`;
+
+  if (ancModeNotificationWindow && !ancModeNotificationWindow.isDestroyed()) {
+    const win = ancModeNotificationWindow;
+    if (!win.isVisible()) {
+      applyAncModeOsdLayout(win, nextLayout);
+      ancModeOsdLayout = nextLayout;
+      win.showInactive();
+    }
+    updateAncModeNotificationPalette(win, palette);
+    updateAncModeNotificationUi(win, ancModePendingValue ?? mode);
+    scheduleAncModeNotificationClose(win);
+    return;
+  }
+
+  const win = new BrowserWindow({
+    width: nextLayout.width,
+    height: nextLayout.height,
+    minWidth: nextLayout.width,
+    maxWidth: nextLayout.width,
+    minHeight: nextLayout.height,
+    maxHeight: nextLayout.height,
+    show: false,
+    frame: false,
+    transparent: true,
+    backgroundColor: "#00000000",
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    focusable: false,
+    hasShadow: false,
+  });
+
+  ancModeNotificationWindow = win;
+  ancModeOsdLayout = nextLayout;
+  await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  win.setAlwaysOnTop(true, "screen-saver");
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+  const showAncNotification = () => {
+    if (win.isDestroyed()) {
+      return;
+    }
+    const layout = ancModeOsdLayout ?? nextLayout;
+    applyAncModeOsdLayout(win, layout);
+    updateAncModeNotificationPalette(win, palette);
+    win.showInactive();
+    updateAncModeNotificationUi(win, ancModePendingValue ?? mode);
+    scheduleAncModeNotificationClose(win);
+  };
+
+  win.once("ready-to-show", showAncNotification);
+  win.webContents.once("did-finish-load", () => {
+    if (!win.isVisible()) {
+      showAncNotification();
+    }
+  });
+  win.on("closed", () => {
+    if (ancModeNotificationWindow === win) {
+      ancModeNotificationWindow = null;
+    }
+    ancModePendingValue = null;
+    ancModeOsdLayout = null;
+    clearAncModeNotificationTimer();
+  });
+}
+
+function updateConnectivityNotificationScale(win: BrowserWindow, uiScale: number): void {
+  const scale = clampNumber(uiScale, 0.75, 1.5).toFixed(4);
+  void win.webContents
+    .executeJavaScript(`window.__setConnectivityScale?.(${scale});`, true)
+    .catch(() => undefined);
+}
+
+function updateConnectivityNotificationPalette(win: BrowserWindow, palette: { panelBg: string; textColor: string }): void {
+  const safeBg = String(palette.panelBg || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const safeText = String(palette.textColor || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  if (!safeBg || !safeText) {
+    return;
+  }
+  void win.webContents
+    .executeJavaScript(`window.__setConnectivityPalette?.('${safeBg}','${safeText}');`, true)
+    .catch(() => undefined);
+}
+
+function updateConnectivityNotificationUi(win: BrowserWindow, payload: ConnectivityNotificationPayload): void {
+  const safePayload = JSON.stringify({
+    connected: Boolean(payload.connected),
+    wireless: Boolean(payload.wireless),
+    bluetooth: Boolean(payload.bluetooth),
+    battery: toNullablePercent(payload.battery),
+  });
+  void win.webContents
+    .executeJavaScript(`window.__setConnectivityState?.(${safePayload});`, true)
+    .catch(() => undefined);
+}
+
+function applyConnectivityOsdLayout(win: BrowserWindow, layout: OsdLayout): void {
+  win.setMinimumSize(layout.width, layout.height);
+  win.setMaximumSize(layout.width, layout.height);
+  const bounds = win.getBounds();
+  if (bounds.x !== layout.x || bounds.y !== layout.y || bounds.width !== layout.width || bounds.height !== layout.height) {
+    win.setBounds(
+      {
+        x: layout.x,
+        y: layout.y,
+        width: layout.width,
+        height: layout.height,
+      },
+      false,
+    );
+  }
+  updateConnectivityNotificationScale(win, layout.uiScale);
+}
+
+async function showConnectivityNotification(payload: ConnectivityNotificationPayload): Promise<void> {
+  const normalized: ConnectivityNotificationPayload = {
+    connected: Boolean(payload.connected),
+    wireless: Boolean(payload.wireless),
+    bluetooth: Boolean(payload.bluetooth),
+    battery: toNullablePercent(payload.battery),
+  };
+  connectivityPendingValue = normalized;
+  const nextLayout = resolveConnectivityOsdLayout();
+  const theme = await getThemePayload();
+  const palette = resolveHeadsetVolumeNotificationPalette(theme);
+  const html = `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data:;" />
+      <style>
+        :root {
+          color-scheme: dark;
+          --s: ${nextLayout.uiScale.toFixed(4)};
+          --panel-bg: ${palette.panelBg};
+          --text-color: ${palette.textColor};
+          --ok: ${CONNECTIVITY_CONNECTED_ACCENT};
+          --bad: ${CONNECTIVITY_DISCONNECTED_ACCENT};
+          --accent: var(--ok);
+          --bar-off: rgba(255,255,255,0.34);
+        }
+        html, body {
+          margin: 0;
+          width: 100%;
+          height: 100%;
+          background: transparent;
+          overflow: hidden;
+          font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+        }
+        .shell {
+          width: 100%;
+          height: 100%;
+          box-sizing: border-box;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.14);
+          background: var(--panel-bg);
+          box-shadow: 0 8px 18px rgba(0,0,0,0.38);
+          display: grid;
+          place-items: center;
+        }
+        .stack {
+          display: grid;
+          justify-items: center;
+          align-content: center;
+          row-gap: calc(3px * var(--s));
+          line-height: 1;
+        }
+        .headset {
+          width: calc(17px * var(--s));
+          height: calc(17px * var(--s));
+          color: var(--text-color);
+        }
+        .headset svg,
+        .transport svg,
+        .battery svg {
+          width: 100%;
+          height: 100%;
+          display: block;
+        }
+        .status {
+          color: var(--accent);
+          font-size: calc(9px * var(--s));
+          font-weight: 700;
+          letter-spacing: 0.06em;
+        }
+        .transport {
+          color: var(--accent);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: calc(4px * var(--s));
+          min-height: calc(12px * var(--s));
+        }
+        .transport-icon {
+          width: calc(12px * var(--s));
+          height: calc(12px * var(--s));
+          display: none;
+        }
+        .battery {
+          width: calc(28px * var(--s));
+          height: calc(14px * var(--s));
+          color: var(--text-color);
+        }
+        .battery .body {
+          stroke: currentColor;
+        }
+        .battery .cap {
+          fill: currentColor;
+        }
+        .battery .bar {
+          fill: var(--bar-off);
+          opacity: 1;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="shell" aria-label="Connectivity status">
+        <div class="stack">
+          <div class="headset" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="17" height="17">
+              <path d="M4 13a8 8 0 1 1 16 0v5a2 2 0 0 1-2 2h-1v-6h1v-1a6 6 0 1 0-12 0v1h1v6H6a2 2 0 0 1-2-2z" fill="currentColor" />
+            </svg>
+          </div>
+          <div id="status" class="status">CONNECTED</div>
+          <div id="transport" class="transport">
+            <div id="wifi" class="transport-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="12" height="12">
+                <path d="M2 9a16 16 0 0 1 20 0M5 12a11 11 0 0 1 14 0M8.5 15.5a6 6 0 0 1 7 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                <circle cx="12" cy="19" r="1.7" fill="currentColor" />
+              </svg>
+            </div>
+            <div id="bt" class="transport-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="12" height="12">
+                <path d="M11 4l6 5-6 5V4zm0 10l6 6-6-3v-3zm0-10v16M5 7l12 10M5 17L17 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </div>
+          </div>
+          <div id="battery" class="battery" aria-hidden="true">
+            <svg viewBox="0 0 24 14" width="24" height="12">
+              <rect class="body" x="1" y="2" width="19" height="10" rx="2" fill="none" stroke-width="1.8" />
+              <rect class="cap" x="21" y="5" width="2" height="4" rx="1" />
+              <rect id="bar1" class="bar" x="3" y="4" width="3" height="6" rx="0.8" />
+              <rect id="bar2" class="bar" x="7" y="4" width="3" height="6" rx="0.8" />
+              <rect id="bar3" class="bar" x="11" y="4" width="3" height="6" rx="0.8" />
+              <rect id="bar4" class="bar" x="15" y="4" width="3" height="6" rx="0.8" />
+            </svg>
+          </div>
+        </div>
+      </div>
+      <script>
+        (function () {
+          const root = document.documentElement;
+          const statusEl = document.getElementById("status");
+          const transportEl = document.getElementById("transport");
+          const batteryEl = document.getElementById("battery");
+          const wifiEl = document.getElementById("wifi");
+          const btEl = document.getElementById("bt");
+          const bars = [1, 2, 3, 4].map((n) => document.getElementById("bar" + n));
+          const paintBars = (activeBars) => {
+            const count = Math.max(0, Math.min(4, Math.round(Number(activeBars) || 0)));
+            bars.forEach((bar, idx) => {
+              if (!bar) return;
+              bar.style.fill = idx < count ? "var(--accent)" : "var(--bar-off)";
+            });
+          };
+          const applyBattery = (value) => {
+            const next = Number(value);
+            if (!Number.isFinite(next)) {
+              paintBars(0);
+              return;
+            }
+            const clamped = Math.max(0, Math.min(100, Math.round(next)));
+            const activeBars = clamped <= 0 ? 0 : Math.ceil(clamped / 25);
+            paintBars(activeBars);
+          };
+          const applyState = (next) => {
+            const state = next && typeof next === "object" ? next : {};
+            const connected = Boolean(state.connected);
+            const wireless = Boolean(state.wireless);
+            const bluetooth = Boolean(state.bluetooth);
+            root.style.setProperty("--accent", connected ? "var(--ok)" : "var(--bad)");
+            if (statusEl) statusEl.textContent = connected ? "CONNECTED" : "DISCONNECTED";
+            const showTransport = connected && (wireless || bluetooth);
+            if (transportEl) transportEl.style.display = showTransport ? "flex" : "none";
+            if (batteryEl) batteryEl.style.display = connected ? "block" : "none";
+            if (wifiEl) wifiEl.style.display = connected && wireless ? "block" : "none";
+            if (btEl) btEl.style.display = connected && bluetooth ? "block" : "none";
+            if (connected) {
+              applyBattery(state.battery);
+            }
+          };
+          window.__setConnectivityPalette = (bg, text) => {
+            const nextBg = String(bg || "").trim();
+            const nextText = String(text || "").trim();
+            if (nextBg) root.style.setProperty("--panel-bg", nextBg);
+            if (nextText) root.style.setProperty("--text-color", nextText);
+          };
+          window.__setConnectivityScale = (s) => {
+            const nextScale = Math.max(0.75, Math.min(1.5, Number(s) || 1));
+            root.style.setProperty("--s", String(nextScale));
+          };
+          window.__setConnectivityState = (next) => applyState(next);
+          applyState(${JSON.stringify(normalized)});
+        })();
+      </script>
+    </body>
+  </html>`;
+
+  if (connectivityNotificationWindow && !connectivityNotificationWindow.isDestroyed()) {
+    const win = connectivityNotificationWindow;
+    if (!win.isVisible()) {
+      applyConnectivityOsdLayout(win, nextLayout);
+      connectivityOsdLayout = nextLayout;
+      win.showInactive();
+    }
+    updateConnectivityNotificationPalette(win, palette);
+    updateConnectivityNotificationUi(win, connectivityPendingValue ?? normalized);
+    scheduleConnectivityNotificationClose(win);
+    return;
+  }
+
+  const win = new BrowserWindow({
+    width: nextLayout.width,
+    height: nextLayout.height,
+    minWidth: nextLayout.width,
+    maxWidth: nextLayout.width,
+    minHeight: nextLayout.height,
+    maxHeight: nextLayout.height,
+    show: false,
+    frame: false,
+    transparent: true,
+    backgroundColor: "#00000000",
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    focusable: false,
+    hasShadow: false,
+  });
+
+  connectivityNotificationWindow = win;
+  connectivityOsdLayout = nextLayout;
+  await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  win.setAlwaysOnTop(true, "screen-saver");
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+  const showConnectivityOsd = () => {
+    if (win.isDestroyed()) {
+      return;
+    }
+    const layout = connectivityOsdLayout ?? nextLayout;
+    applyConnectivityOsdLayout(win, layout);
+    updateConnectivityNotificationPalette(win, palette);
+    win.showInactive();
+    updateConnectivityNotificationUi(win, connectivityPendingValue ?? normalized);
+    scheduleConnectivityNotificationClose(win);
+  };
+
+  win.once("ready-to-show", showConnectivityOsd);
+  win.webContents.once("did-finish-load", () => {
+    if (!win.isVisible()) {
+      showConnectivityOsd();
+    }
+  });
+  win.on("closed", () => {
+    if (connectivityNotificationWindow === win) {
+      connectivityNotificationWindow = null;
+    }
+    connectivityPendingValue = null;
+    connectivityOsdLayout = null;
+    clearConnectivityNotificationTimer();
+  });
+}
+
+function playBatteryLowAlertTone(): void {
+  shell.beep();
+}
+
+function updateBatteryLowNotificationScale(win: BrowserWindow, uiScale: number): void {
+  const scale = clampNumber(uiScale, 0.75, 1.5).toFixed(4);
+  void win.webContents
+    .executeJavaScript(`window.__setBatteryLowScale?.(${scale});`, true)
+    .catch(() => undefined);
+}
+
+function updateBatteryLowNotificationPalette(win: BrowserWindow, palette: { panelBg: string; textColor: string }): void {
+  const safeBg = String(palette.panelBg || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const safeText = String(palette.textColor || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  if (!safeBg || !safeText) {
+    return;
+  }
+  void win.webContents
+    .executeJavaScript(`window.__setBatteryLowPalette?.('${safeBg}','${safeText}');`, true)
+    .catch(() => undefined);
+}
+
+function updateBatteryLowNotificationUi(win: BrowserWindow, payload: BatteryLowNotificationPayload): void {
+  const safePayload = JSON.stringify({
+    battery: toNullablePercent(payload.battery),
+    threshold: clampPercent(payload.threshold),
+  });
+  void win.webContents
+    .executeJavaScript(`window.__setBatteryLowState?.(${safePayload});`, true)
+    .catch(() => undefined);
+}
+
+function applyBatteryLowOsdLayout(win: BrowserWindow, layout: OsdLayout): void {
+  win.setMinimumSize(layout.width, layout.height);
+  win.setMaximumSize(layout.width, layout.height);
+  const bounds = win.getBounds();
+  if (bounds.x !== layout.x || bounds.y !== layout.y || bounds.width !== layout.width || bounds.height !== layout.height) {
+    win.setBounds(
+      {
+        x: layout.x,
+        y: layout.y,
+        width: layout.width,
+        height: layout.height,
+      },
+      false,
+    );
+  }
+  updateBatteryLowNotificationScale(win, layout.uiScale);
+}
+
+async function showBatteryLowNotification(payload: BatteryLowNotificationPayload): Promise<void> {
+  const normalized: BatteryLowNotificationPayload = {
+    battery: toNullablePercent(payload.battery),
+    threshold: clampPercent(payload.threshold),
+  };
+  batteryLowPendingValue = normalized;
+  const nextLayout = resolveBatteryLowOsdLayout();
+  const theme = await getThemePayload();
+  const palette = resolveHeadsetVolumeNotificationPalette(theme);
+  const html = `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data:;" />
+      <style>
+        :root {
+          color-scheme: dark;
+          --s: ${nextLayout.uiScale.toFixed(4)};
+          --panel-bg: ${palette.panelBg};
+          --text-color: ${palette.textColor};
+          --accent: ${BATTERY_LOW_OSD_ACCENT};
+        }
+        html, body {
+          margin: 0;
+          width: 100%;
+          height: 100%;
+          background: transparent;
+          overflow: hidden;
+          font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+        }
+        .shell {
+          width: 100%;
+          height: 100%;
+          box-sizing: border-box;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.14);
+          background: var(--panel-bg);
+          box-shadow: 0 8px 18px rgba(0,0,0,0.38);
+          display: grid;
+          place-items: center;
+          padding: calc(8px * var(--s));
+        }
+        .stack {
+          display: grid;
+          justify-items: center;
+          align-content: center;
+          row-gap: calc(3px * var(--s));
+          text-align: center;
+          line-height: 1;
+        }
+        .headset {
+          width: calc(18px * var(--s));
+          height: calc(18px * var(--s));
+          color: var(--text-color);
+        }
+        .headset svg {
+          width: 100%;
+          height: 100%;
+          display: block;
+        }
+        .warning {
+          color: var(--accent);
+          font-size: calc(10px * var(--s));
+          font-weight: 700;
+          letter-spacing: 0.06em;
+        }
+        .detail {
+          color: var(--text-color);
+          opacity: 0.9;
+          font-size: calc(8px * var(--s));
+          font-weight: 600;
+        }
+        .level {
+          color: var(--accent);
+          font-size: calc(8px * var(--s));
+          font-weight: 700;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="shell" aria-label="Low headset battery warning">
+        <div class="stack">
+          <div class="headset" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18">
+              <path d="M4 13a8 8 0 1 1 16 0v5a2 2 0 0 1-2 2h-1v-6h1v-1a6 6 0 1 0-12 0v1h1v6H6a2 2 0 0 1-2-2z" fill="currentColor" />
+            </svg>
+          </div>
+          <div class="warning">LOW BATTERY</div>
+          <div class="detail">Replace headset battery</div>
+          <div id="level" class="level"></div>
+        </div>
+      </div>
+      <script>
+        (function () {
+          const root = document.documentElement;
+          const levelEl = document.getElementById("level");
+          const applyState = (next) => {
+            const state = next && typeof next === "object" ? next : {};
+            const level = Number(state.battery);
+            if (!Number.isFinite(level)) {
+              if (levelEl) levelEl.textContent = "";
+              return;
+            }
+            const pct = Math.max(0, Math.min(100, Math.round(level)));
+            if (levelEl) levelEl.textContent = pct + "%";
+          };
+          window.__setBatteryLowPalette = (bg, text) => {
+            const nextBg = String(bg || "").trim();
+            const nextText = String(text || "").trim();
+            if (nextBg) root.style.setProperty("--panel-bg", nextBg);
+            if (nextText) root.style.setProperty("--text-color", nextText);
+          };
+          window.__setBatteryLowScale = (s) => {
+            const nextScale = Math.max(0.75, Math.min(1.5, Number(s) || 1));
+            root.style.setProperty("--s", String(nextScale));
+          };
+          window.__setBatteryLowState = (next) => applyState(next);
+          applyState(${JSON.stringify(normalized)});
+        })();
+      </script>
+    </body>
+  </html>`;
+
+  if (batteryLowNotificationWindow && !batteryLowNotificationWindow.isDestroyed()) {
+    const win = batteryLowNotificationWindow;
+    const wasVisible = win.isVisible();
+    if (!wasVisible) {
+      applyBatteryLowOsdLayout(win, nextLayout);
+      batteryLowOsdLayout = nextLayout;
+      win.showInactive();
+    }
+    updateBatteryLowNotificationPalette(win, palette);
+    updateBatteryLowNotificationUi(win, batteryLowPendingValue ?? normalized);
+    scheduleBatteryLowNotificationClose(win);
+    if (!wasVisible) {
+      playBatteryLowAlertTone();
+    }
+    return;
+  }
+
+  const win = new BrowserWindow({
+    width: nextLayout.width,
+    height: nextLayout.height,
+    minWidth: nextLayout.width,
+    maxWidth: nextLayout.width,
+    minHeight: nextLayout.height,
+    maxHeight: nextLayout.height,
+    show: false,
+    frame: false,
+    transparent: true,
+    backgroundColor: "#00000000",
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    focusable: false,
+    hasShadow: false,
+  });
+
+  batteryLowNotificationWindow = win;
+  batteryLowOsdLayout = nextLayout;
+  await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  win.setAlwaysOnTop(true, "screen-saver");
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+  const showBatteryLowOsd = () => {
+    if (win.isDestroyed()) {
+      return;
+    }
+    const layout = batteryLowOsdLayout ?? nextLayout;
+    applyBatteryLowOsdLayout(win, layout);
+    updateBatteryLowNotificationPalette(win, palette);
+    win.showInactive();
+    updateBatteryLowNotificationUi(win, batteryLowPendingValue ?? normalized);
+    scheduleBatteryLowNotificationClose(win);
+    playBatteryLowAlertTone();
+  };
+
+  win.once("ready-to-show", showBatteryLowOsd);
+  win.webContents.once("did-finish-load", () => {
+    if (!win.isVisible()) {
+      showBatteryLowOsd();
+    }
+  });
+  win.on("closed", () => {
+    if (batteryLowNotificationWindow === win) {
+      batteryLowNotificationWindow = null;
+    }
+    batteryLowPendingValue = null;
+    batteryLowOsdLayout = null;
+    clearBatteryLowNotificationTimer();
+  });
+}
+
+function updateBaseBatteryStatusNotificationScale(win: BrowserWindow, uiScale: number): void {
+  const scale = clampNumber(uiScale, 0.75, 1.5).toFixed(4);
+  void win.webContents
+    .executeJavaScript(`window.__setBaseBatteryScale?.(${scale});`, true)
+    .catch(() => undefined);
+}
+
+function updateBaseBatteryStatusNotificationPalette(win: BrowserWindow, palette: { panelBg: string; textColor: string }): void {
+  const safeBg = String(palette.panelBg || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const safeText = String(palette.textColor || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  if (!safeBg || !safeText) {
+    return;
+  }
+  void win.webContents
+    .executeJavaScript(`window.__setBaseBatteryPalette?.('${safeBg}','${safeText}');`, true)
+    .catch(() => undefined);
+}
+
+function updateBaseBatteryStatusNotificationUi(win: BrowserWindow, payload: BaseBatteryStatusNotificationPayload): void {
+  const safePayload = JSON.stringify({
+    inserted: Boolean(payload.inserted),
+    battery: toNullablePercent(payload.battery),
+  });
+  void win.webContents
+    .executeJavaScript(`window.__setBaseBatteryState?.(${safePayload});`, true)
+    .catch(() => undefined);
+}
+
+function applyBaseBatteryStatusOsdLayout(win: BrowserWindow, layout: OsdLayout): void {
+  win.setMinimumSize(layout.width, layout.height);
+  win.setMaximumSize(layout.width, layout.height);
+  const bounds = win.getBounds();
+  if (bounds.x !== layout.x || bounds.y !== layout.y || bounds.width !== layout.width || bounds.height !== layout.height) {
+    win.setBounds(
+      {
+        x: layout.x,
+        y: layout.y,
+        width: layout.width,
+        height: layout.height,
+      },
+      false,
+    );
+  }
+  updateBaseBatteryStatusNotificationScale(win, layout.uiScale);
+}
+
+async function showBaseBatteryStatusNotification(payload: BaseBatteryStatusNotificationPayload): Promise<void> {
+  const normalized: BaseBatteryStatusNotificationPayload = {
+    inserted: Boolean(payload.inserted),
+    battery: toNullablePercent(payload.battery),
+  };
+  baseBatteryStatusPendingValue = normalized;
+  const nextLayout = resolveBaseBatteryStatusOsdLayout();
+  const theme = await getThemePayload();
+  const palette = resolveHeadsetVolumeNotificationPalette(theme);
+  const html = `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data:;" />
+      <style>
+        :root {
+          color-scheme: dark;
+          --s: ${nextLayout.uiScale.toFixed(4)};
+          --panel-bg: ${palette.panelBg};
+          --text-color: ${palette.textColor};
+          --inserted: ${BASE_BATTERY_INSERTED_ACCENT};
+          --removed: ${BASE_BATTERY_REMOVED_ACCENT};
+          --accent: var(--inserted);
+          --bar-off: rgba(255,255,255,0.34);
+        }
+        html, body {
+          margin: 0;
+          width: 100%;
+          height: 100%;
+          background: transparent;
+          overflow: hidden;
+          font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+        }
+        .shell {
+          width: 100%;
+          height: 100%;
+          box-sizing: border-box;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.14);
+          background: var(--panel-bg);
+          box-shadow: 0 8px 18px rgba(0,0,0,0.38);
+          display: grid;
+          place-items: center;
+          padding: calc(8px * var(--s));
+        }
+        .stack {
+          display: grid;
+          justify-items: center;
+          align-content: center;
+          row-gap: calc(3px * var(--s));
+          text-align: center;
+          line-height: 1;
+        }
+        .icon {
+          width: calc(18px * var(--s));
+          height: calc(18px * var(--s));
+          color: var(--text-color);
+        }
+        .icon svg {
+          width: 100%;
+          height: 100%;
+          display: block;
+        }
+        .icon .body {
+          stroke: currentColor;
+        }
+        .icon .cap {
+          fill: currentColor;
+        }
+        .icon .bar {
+          fill: var(--bar-off);
+          opacity: 1;
+        }
+        .status {
+          color: var(--accent);
+          font-size: calc(9px * var(--s));
+          font-weight: 700;
+          letter-spacing: 0.05em;
+        }
+        .level {
+          color: var(--text-color);
+          opacity: 0.9;
+          font-size: calc(8px * var(--s));
+          font-weight: 600;
+          min-height: 1em;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="shell" aria-label="Base station battery state">
+        <div class="stack">
+          <div class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 14" width="24" height="14">
+              <rect class="body" x="1" y="2" width="19" height="10" rx="2" fill="none" stroke-width="1.8" />
+              <rect class="cap" x="21" y="5" width="2" height="4" rx="1" />
+              <rect id="bb1" class="bar" x="3" y="4" width="3" height="6" rx="0.8" />
+              <rect id="bb2" class="bar" x="7" y="4" width="3" height="6" rx="0.8" />
+              <rect id="bb3" class="bar" x="11" y="4" width="3" height="6" rx="0.8" />
+              <rect id="bb4" class="bar" x="15" y="4" width="3" height="6" rx="0.8" />
+            </svg>
+          </div>
+          <div id="status" class="status">BATTERY INSERTED</div>
+          <div id="level" class="level"></div>
+        </div>
+      </div>
+      <script>
+        (function () {
+          const root = document.documentElement;
+          const statusEl = document.getElementById("status");
+          const levelEl = document.getElementById("level");
+          const bars = [1, 2, 3, 4].map((n) => document.getElementById("bb" + n));
+          const paintBars = (activeBars) => {
+            const count = Math.max(0, Math.min(4, Math.round(Number(activeBars) || 0)));
+            bars.forEach((bar, idx) => {
+              if (!bar) return;
+              bar.style.fill = idx < count ? "var(--accent)" : "var(--bar-off)";
+            });
+          };
+          const applyBars = (inserted, level) => {
+            if (!inserted) {
+              paintBars(0);
+              return;
+            }
+            if (!Number.isFinite(level)) {
+              paintBars(0);
+              return;
+            }
+            const clamped = Math.max(0, Math.min(100, Math.round(level)));
+            const activeBars = clamped <= 0 ? 0 : Math.ceil(clamped / 25);
+            paintBars(activeBars);
+          };
+          const applyState = (next) => {
+            const state = next && typeof next === "object" ? next : {};
+            const inserted = Boolean(state.inserted);
+            const level = Number(state.battery);
+            root.style.setProperty("--accent", inserted ? "var(--inserted)" : "var(--removed)");
+            if (statusEl) statusEl.textContent = inserted ? "BATTERY INSERTED" : "BATTERY REMOVED";
+            applyBars(inserted, level);
+            if (levelEl) {
+              if (inserted && Number.isFinite(level)) {
+                const pct = Math.max(0, Math.min(100, Math.round(level)));
+                levelEl.textContent = "Charge " + pct + "%";
+                levelEl.style.display = "block";
+              } else {
+                levelEl.textContent = "";
+                levelEl.style.display = "none";
+              }
+            }
+          };
+          window.__setBaseBatteryPalette = (bg, text) => {
+            const nextBg = String(bg || "").trim();
+            const nextText = String(text || "").trim();
+            if (nextBg) root.style.setProperty("--panel-bg", nextBg);
+            if (nextText) root.style.setProperty("--text-color", nextText);
+          };
+          window.__setBaseBatteryScale = (s) => {
+            const nextScale = Math.max(0.75, Math.min(1.5, Number(s) || 1));
+            root.style.setProperty("--s", String(nextScale));
+          };
+          window.__setBaseBatteryState = (next) => applyState(next);
+          applyState(${JSON.stringify(normalized)});
+        })();
+      </script>
+    </body>
+  </html>`;
+
+  if (baseBatteryStatusNotificationWindow && !baseBatteryStatusNotificationWindow.isDestroyed()) {
+    const win = baseBatteryStatusNotificationWindow;
+    if (!win.isVisible()) {
+      applyBaseBatteryStatusOsdLayout(win, nextLayout);
+      baseBatteryStatusOsdLayout = nextLayout;
+      win.showInactive();
+    }
+    updateBaseBatteryStatusNotificationPalette(win, palette);
+    updateBaseBatteryStatusNotificationUi(win, baseBatteryStatusPendingValue ?? normalized);
+    scheduleBaseBatteryStatusNotificationClose(win);
+    return;
+  }
+
+  const win = new BrowserWindow({
+    width: nextLayout.width,
+    height: nextLayout.height,
+    minWidth: nextLayout.width,
+    maxWidth: nextLayout.width,
+    minHeight: nextLayout.height,
+    maxHeight: nextLayout.height,
+    show: false,
+    frame: false,
+    transparent: true,
+    backgroundColor: "#00000000",
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    focusable: false,
+    hasShadow: false,
+  });
+
+  baseBatteryStatusNotificationWindow = win;
+  baseBatteryStatusOsdLayout = nextLayout;
+  await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  win.setAlwaysOnTop(true, "screen-saver");
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+  const showBaseBatteryStatusOsd = () => {
+    if (win.isDestroyed()) {
+      return;
+    }
+    const layout = baseBatteryStatusOsdLayout ?? nextLayout;
+    applyBaseBatteryStatusOsdLayout(win, layout);
+    updateBaseBatteryStatusNotificationPalette(win, palette);
+    win.showInactive();
+    updateBaseBatteryStatusNotificationUi(win, baseBatteryStatusPendingValue ?? normalized);
+    scheduleBaseBatteryStatusNotificationClose(win);
+  };
+
+  win.once("ready-to-show", showBaseBatteryStatusOsd);
+  win.webContents.once("did-finish-load", () => {
+    if (!win.isVisible()) {
+      showBaseBatteryStatusOsd();
+    }
+  });
+  win.on("closed", () => {
+    if (baseBatteryStatusNotificationWindow === win) {
+      baseBatteryStatusNotificationWindow = null;
+    }
+    baseBatteryStatusPendingValue = null;
+    baseBatteryStatusOsdLayout = null;
+    clearBaseBatteryStatusNotificationTimer();
+  });
+}
+
+function resetBatterySwapTrack(): void {
+  batterySwapTrack.armed = false;
+  batterySwapTrack.sawDisconnect = false;
+  batterySwapTrack.sawReconnectWithHigherHeadset = false;
+  batterySwapTrack.headsetBeforeSwap = null;
+  batterySwapTrack.baseBeforeRemoval = null;
+}
+
+function scheduleHeadsetBatterySwapNotification(payload: HeadsetBatterySwapNotificationPayload, delayMs: number): void {
+  clearHeadsetBatterySwapDelayTimer();
+  const wait = Math.max(0, Math.round(delayMs));
+  headsetBatterySwapDelayTimer = setTimeout(() => {
+    headsetBatterySwapDelayTimer = null;
+    if (!isNotifEnabled("battery")) {
+      return;
+    }
+    void showHeadsetBatterySwapNotification(payload);
+  }, wait);
+}
+
+function updateHeadsetBatterySwapNotificationScale(win: BrowserWindow, uiScale: number): void {
+  const scale = clampNumber(uiScale, 0.75, 1.5).toFixed(4);
+  void win.webContents
+    .executeJavaScript(`window.__setHeadsetBatterySwapScale?.(${scale});`, true)
+    .catch(() => undefined);
+}
+
+function updateHeadsetBatterySwapNotificationPalette(win: BrowserWindow, palette: { panelBg: string; textColor: string }): void {
+  const safeBg = String(palette.panelBg || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const safeText = String(palette.textColor || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  if (!safeBg || !safeText) {
+    return;
+  }
+  void win.webContents
+    .executeJavaScript(`window.__setHeadsetBatterySwapPalette?.('${safeBg}','${safeText}');`, true)
+    .catch(() => undefined);
+}
+
+function updateHeadsetBatterySwapNotificationUi(win: BrowserWindow, payload: HeadsetBatterySwapNotificationPayload): void {
+  const safePayload = JSON.stringify({
+    headsetBattery: toNullablePercent(payload.headsetBattery),
+  });
+  void win.webContents
+    .executeJavaScript(`window.__setHeadsetBatterySwapState?.(${safePayload});`, true)
+    .catch(() => undefined);
+}
+
+function applyHeadsetBatterySwapOsdLayout(win: BrowserWindow, layout: OsdLayout): void {
+  win.setMinimumSize(layout.width, layout.height);
+  win.setMaximumSize(layout.width, layout.height);
+  const bounds = win.getBounds();
+  if (bounds.x !== layout.x || bounds.y !== layout.y || bounds.width !== layout.width || bounds.height !== layout.height) {
+    win.setBounds(
+      {
+        x: layout.x,
+        y: layout.y,
+        width: layout.width,
+        height: layout.height,
+      },
+      false,
+    );
+  }
+  updateHeadsetBatterySwapNotificationScale(win, layout.uiScale);
+}
+
+async function showHeadsetBatterySwapNotification(payload: HeadsetBatterySwapNotificationPayload): Promise<void> {
+  const normalized: HeadsetBatterySwapNotificationPayload = {
+    headsetBattery: toNullablePercent(payload.headsetBattery),
+  };
+  headsetBatterySwapPendingValue = normalized;
+  const nextLayout = resolveHeadsetBatterySwapOsdLayout();
+  const theme = await getThemePayload();
+  const palette = resolveHeadsetVolumeNotificationPalette(theme);
+  const html = `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data:;" />
+      <style>
+        :root {
+          color-scheme: dark;
+          --s: ${nextLayout.uiScale.toFixed(4)};
+          --panel-bg: ${palette.panelBg};
+          --text-color: ${palette.textColor};
+          --accent: ${HEADSET_BATTERY_SWAP_ACCENT};
+          --bar-off: rgba(255,255,255,0.34);
+        }
+        html, body {
+          margin: 0;
+          width: 100%;
+          height: 100%;
+          background: transparent;
+          overflow: hidden;
+          font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+        }
+        .shell {
+          width: 100%;
+          height: 100%;
+          box-sizing: border-box;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.14);
+          background: var(--panel-bg);
+          box-shadow: 0 8px 18px rgba(0,0,0,0.38);
+          display: grid;
+          place-items: center;
+          padding: calc(8px * var(--s));
+        }
+        .stack {
+          display: grid;
+          justify-items: center;
+          align-content: center;
+          row-gap: calc(3px * var(--s));
+          text-align: center;
+          line-height: 1;
+        }
+        .headset {
+          width: calc(17px * var(--s));
+          height: calc(17px * var(--s));
+          color: var(--text-color);
+        }
+        .headset svg {
+          width: 100%;
+          height: 100%;
+          display: block;
+        }
+        .status {
+          color: var(--accent);
+          font-size: calc(8px * var(--s));
+          font-weight: 700;
+          letter-spacing: 0.05em;
+        }
+        .battery-row {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: calc(3px * var(--s));
+          color: var(--text-color);
+        }
+        .battery {
+          width: calc(26px * var(--s));
+          height: calc(13px * var(--s));
+        }
+        .battery svg {
+          width: 100%;
+          height: 100%;
+          display: block;
+        }
+        .battery .body {
+          stroke: currentColor;
+        }
+        .battery .cap {
+          fill: currentColor;
+        }
+        .battery .bar {
+          fill: var(--bar-off);
+        }
+        .value {
+          color: var(--accent);
+          font-size: calc(8px * var(--s));
+          font-weight: 700;
+          min-width: 3ch;
+          text-align: right;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="shell" aria-label="Headset battery swapped">
+        <div class="stack">
+          <div class="headset" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="17" height="17">
+              <path d="M4 13a8 8 0 1 1 16 0v5a2 2 0 0 1-2 2h-1v-6h1v-1a6 6 0 1 0-12 0v1h1v6H6a2 2 0 0 1-2-2z" fill="currentColor" />
+            </svg>
+          </div>
+          <div class="status">BATTERY SWAPPED</div>
+          <div class="battery-row">
+            <div class="battery" aria-hidden="true">
+              <svg viewBox="0 0 24 14" width="24" height="12">
+                <rect class="body" x="1" y="2" width="19" height="10" rx="2" fill="none" stroke-width="1.8" />
+                <rect class="cap" x="21" y="5" width="2" height="4" rx="1" />
+                <rect id="hs1" class="bar" x="3" y="4" width="3" height="6" rx="0.8" />
+                <rect id="hs2" class="bar" x="7" y="4" width="3" height="6" rx="0.8" />
+                <rect id="hs3" class="bar" x="11" y="4" width="3" height="6" rx="0.8" />
+                <rect id="hs4" class="bar" x="15" y="4" width="3" height="6" rx="0.8" />
+              </svg>
+            </div>
+            <div id="level" class="value">--%</div>
+          </div>
+        </div>
+      </div>
+      <script>
+        (function () {
+          const root = document.documentElement;
+          const levelEl = document.getElementById("level");
+          const bars = [1, 2, 3, 4].map((n) => document.getElementById("hs" + n));
+          const paintBars = (activeBars) => {
+            const count = Math.max(0, Math.min(4, Math.round(Number(activeBars) || 0)));
+            bars.forEach((bar, idx) => {
+              if (!bar) return;
+              bar.style.fill = idx < count ? "var(--accent)" : "var(--bar-off)";
+            });
+          };
+          const applyState = (next) => {
+            const state = next && typeof next === "object" ? next : {};
+            const level = Number(state.headsetBattery);
+            if (!Number.isFinite(level)) {
+              paintBars(0);
+              if (levelEl) levelEl.textContent = "--%";
+              return;
+            }
+            const pct = Math.max(0, Math.min(100, Math.round(level)));
+            const activeBars = pct <= 0 ? 0 : Math.ceil(pct / 25);
+            paintBars(activeBars);
+            if (levelEl) levelEl.textContent = pct + "%";
+          };
+          window.__setHeadsetBatterySwapPalette = (bg, text) => {
+            const nextBg = String(bg || "").trim();
+            const nextText = String(text || "").trim();
+            if (nextBg) root.style.setProperty("--panel-bg", nextBg);
+            if (nextText) root.style.setProperty("--text-color", nextText);
+          };
+          window.__setHeadsetBatterySwapScale = (s) => {
+            const nextScale = Math.max(0.75, Math.min(1.5, Number(s) || 1));
+            root.style.setProperty("--s", String(nextScale));
+          };
+          window.__setHeadsetBatterySwapState = (next) => applyState(next);
+          applyState(${JSON.stringify(normalized)});
+        })();
+      </script>
+    </body>
+  </html>`;
+
+  if (headsetBatterySwapNotificationWindow && !headsetBatterySwapNotificationWindow.isDestroyed()) {
+    const win = headsetBatterySwapNotificationWindow;
+    if (!win.isVisible()) {
+      applyHeadsetBatterySwapOsdLayout(win, nextLayout);
+      headsetBatterySwapOsdLayout = nextLayout;
+      win.showInactive();
+    }
+    updateHeadsetBatterySwapNotificationPalette(win, palette);
+    updateHeadsetBatterySwapNotificationUi(win, headsetBatterySwapPendingValue ?? normalized);
+    scheduleHeadsetBatterySwapNotificationClose(win);
+    return;
+  }
+
+  const win = new BrowserWindow({
+    width: nextLayout.width,
+    height: nextLayout.height,
+    minWidth: nextLayout.width,
+    maxWidth: nextLayout.width,
+    minHeight: nextLayout.height,
+    maxHeight: nextLayout.height,
+    show: false,
+    frame: false,
+    transparent: true,
+    backgroundColor: "#00000000",
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    focusable: false,
+    hasShadow: false,
+  });
+
+  headsetBatterySwapNotificationWindow = win;
+  headsetBatterySwapOsdLayout = nextLayout;
+  await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  win.setAlwaysOnTop(true, "screen-saver");
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+  const showHeadsetBatterySwapOsd = () => {
+    if (win.isDestroyed()) {
+      return;
+    }
+    const layout = headsetBatterySwapOsdLayout ?? nextLayout;
+    applyHeadsetBatterySwapOsdLayout(win, layout);
+    updateHeadsetBatterySwapNotificationPalette(win, palette);
+    win.showInactive();
+    updateHeadsetBatterySwapNotificationUi(win, headsetBatterySwapPendingValue ?? normalized);
+    scheduleHeadsetBatterySwapNotificationClose(win);
+  };
+
+  win.once("ready-to-show", showHeadsetBatterySwapOsd);
+  win.webContents.once("did-finish-load", () => {
+    if (!win.isVisible()) {
+      showHeadsetBatterySwapOsd();
+    }
+  });
+  win.on("closed", () => {
+    if (headsetBatterySwapNotificationWindow === win) {
+      headsetBatterySwapNotificationWindow = null;
+    }
+    headsetBatterySwapPendingValue = null;
+    headsetBatterySwapOsdLayout = null;
+    clearHeadsetBatterySwapNotificationTimer();
+  });
 }
 
 function channelDisplayName(channel: string): string {
@@ -372,11 +2670,16 @@ function getPresetDisplayName(channel: ChannelKey, presetId: string): string {
 function notifyStateChanges(previous: AppState, next: AppState): void {
   if (isNotifEnabled("connectivity")) {
     if (previous.connected !== next.connected && next.connected != null) {
-      showSystemNotification("Control Centre", next.connected ? "Headset connected" : "Headset disconnected");
+      void showConnectivityNotification({
+        connected: next.connected,
+        wireless: Boolean(next.wireless),
+        bluetooth: Boolean(next.bluetooth),
+        battery: next.headset_battery_percent,
+      });
     }
   }
   if (isNotifEnabled("ancMode") && previous.anc_mode !== next.anc_mode && next.anc_mode != null) {
-    showSystemNotification("Control Centre", `ANC mode: ${next.anc_mode}`);
+    void showAncModeNotification(next.anc_mode);
   }
   if (isNotifEnabled("oled") && previous.oled_brightness !== next.oled_brightness && next.oled_brightness != null) {
     showSystemNotification("Control Centre", `OLED brightness: ${next.oled_brightness}`);
@@ -385,33 +2688,86 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
     showSystemNotification("Control Centre", `Sidetone: ${next.sidetone_level}`);
   }
   if (isNotifEnabled("micMute") && previous.mic_mute !== next.mic_mute && next.mic_mute != null) {
-    showSystemNotification("Control Centre", `Mic ${next.mic_mute ? "muted" : "live"}`);
+    void showMicMuteNotification(next.mic_mute);
   }
-  if (isNotifEnabled("chatMix") && previous.chat_mix_balance !== next.chat_mix_balance && next.chat_mix_balance != null) {
-    showSystemNotification("Control Centre", `Chat mix: ${toPercentLabel(next.chat_mix_balance)}`);
-  }
-  if (isNotifEnabled("headsetVolume") && previous.headset_volume_percent !== next.headset_volume_percent && next.headset_volume_percent != null) {
-    showSystemNotification("Control Centre", `Headset volume: ${toPercentLabel(next.headset_volume_percent)}`);
+  const volumeChanged = previous.headset_volume_percent !== next.headset_volume_percent;
+  const chatMixChanged = previous.chat_mix_balance !== next.chat_mix_balance;
+  const chatMixOsdEnabled = isHeadsetChatMixEnabled();
+  const shouldTriggerHeadsetOsd = volumeChanged || (chatMixOsdEnabled && chatMixChanged);
+  if (isNotifEnabled("headsetVolume") && shouldTriggerHeadsetOsd) {
+    void showHeadsetVolumeNotification({
+      volume: volumeChanged ? next.headset_volume_percent : undefined,
+      chatMix: chatMixOsdEnabled && chatMixChanged ? next.chat_mix_balance : undefined,
+    });
   }
   if (isNotifEnabled("battery")) {
     const prevHeadset = previous.headset_battery_percent;
     const nextHeadset = next.headset_battery_percent;
-    if (prevHeadset != null && nextHeadset != null) {
-      if (prevHeadset > 20 && nextHeadset <= 20) {
-        showSystemNotification("Control Centre", `Headset battery low (${toPercentLabel(nextHeadset)})`);
-      } else if (prevHeadset < 95 && nextHeadset >= 95) {
-        showSystemNotification("Control Centre", `Headset battery charged (${toPercentLabel(nextHeadset)})`);
+    const threshold = clampPercent(settings.batteryLowThreshold);
+    const remainedConnected = previous.connected === true && next.connected === true;
+    if (remainedConnected && prevHeadset != null && nextHeadset != null && prevHeadset >= threshold && nextHeadset < threshold) {
+      void showBatteryLowNotification({
+        battery: nextHeadset,
+        threshold,
+      });
+    }
+    const prevBase = toNullablePercent(previous.base_battery_percent);
+    const nextBase = toNullablePercent(next.base_battery_percent);
+    // Base station charging slot reports 0 when no battery is inserted.
+    const hadBattery = prevBase != null && prevBase > 0;
+    const hasBattery = nextBase != null && nextBase > 0;
+    if (hadBattery !== hasBattery) {
+      void showBaseBatteryStatusNotification({
+        inserted: hasBattery,
+        battery: nextBase,
+      });
+    }
+
+    // Headset battery swap detection sequence:
+    // 1) headset battery below 50%
+    // 2) base battery removed
+    // 3) headset disconnects and reconnects with higher headset battery
+    // 4) base battery returns with lower level than before removal
+    if (!batterySwapTrack.armed) {
+      const baselineHeadset = toNullablePercent(prevHeadset);
+      if (baselineHeadset != null && baselineHeadset < 50 && hadBattery && !hasBattery && prevBase != null) {
+        batterySwapTrack.armed = true;
+        batterySwapTrack.sawDisconnect = false;
+        batterySwapTrack.sawReconnectWithHigherHeadset = false;
+        batterySwapTrack.headsetBeforeSwap = baselineHeadset;
+        batterySwapTrack.baseBeforeRemoval = prevBase;
+      }
+    } else {
+      const prevConnected = previous.connected === true;
+      const nextConnected = next.connected === true;
+      if (prevConnected && !nextConnected) {
+        batterySwapTrack.sawDisconnect = true;
+      }
+      if (batterySwapTrack.sawDisconnect && !prevConnected && nextConnected) {
+        const beforeSwap = batterySwapTrack.headsetBeforeSwap;
+        const currentHeadset = toNullablePercent(nextHeadset);
+        batterySwapTrack.sawReconnectWithHigherHeadset =
+          beforeSwap != null && currentHeadset != null && currentHeadset > beforeSwap;
+      }
+      if (batterySwapTrack.sawReconnectWithHigherHeadset) {
+        const baseBeforeRemoval = batterySwapTrack.baseBeforeRemoval;
+        if (baseBeforeRemoval != null && hasBattery && nextBase != null && nextBase < baseBeforeRemoval) {
+          const currentHeadset = toNullablePercent(nextHeadset);
+          const waitForConnectivityMs = Math.max(0, connectivityNotificationHideAt - Date.now()) + 40;
+          scheduleHeadsetBatterySwapNotification({ headsetBattery: currentHeadset }, waitForConnectivityMs);
+          resetBatterySwapTrack();
+        }
+      }
+      const sequenceInvalidated =
+        (hasBattery && !batterySwapTrack.sawDisconnect) ||
+        (batterySwapTrack.sawDisconnect && previous.connected === false && next.connected === true && !batterySwapTrack.sawReconnectWithHigherHeadset);
+      if (sequenceInvalidated) {
+        resetBatterySwapTrack();
       }
     }
-    const prevBase = previous.base_battery_percent;
-    const nextBase = next.base_battery_percent;
-    if (prevBase != null && nextBase != null) {
-      if (prevBase > 20 && nextBase <= 20) {
-        showSystemNotification("Control Centre", `Base battery low (${toPercentLabel(nextBase)})`);
-      } else if (prevBase < 95 && nextBase >= 95) {
-        showSystemNotification("Control Centre", `Base battery charged (${toPercentLabel(nextBase)})`);
-      }
-    }
+  } else {
+    resetBatterySwapTrack();
+    clearHeadsetBatterySwapDelayTimer();
   }
   if (isNotifEnabled("presetChange")) {
     const prevPreset = previous.channel_preset ?? {};
@@ -498,6 +2854,9 @@ function showFlyout(): void {
   flyoutOpeningSince = Date.now();
   if (mainWindow.isMinimized()) {
     mainWindow.restore();
+  }
+  if (settings.useActiveDisplay) {
+    positionBottomRight(mainWindow, resolveUiDisplay());
   }
   mainWindow.show();
   mainWindow.focus();
@@ -606,7 +2965,7 @@ function applyFlyoutSizeFromSettings(): void {
 }
 
 function relayoutNotificationWindows(): void {
-  const display = electronScreen.getPrimaryDisplay();
+  const display = resolveUiDisplay();
   const workArea = display.workArea;
   const margin = 12;
   let y = workArea.y + margin;
@@ -813,7 +3172,48 @@ function wireIpc(): void {
     registerToggleShortcut(next.toggleShortcut);
     if (mainWindow && !mainWindow.isDestroyed()) {
       applyFlyoutSizeFromSettings();
-      positionBottomRight(mainWindow);
+      positionBottomRight(mainWindow, resolveUiDisplay());
+    }
+    if (next.notifications.headsetVolume === false && headsetVolumeNotificationWindow && !headsetVolumeNotificationWindow.isDestroyed()) {
+      headsetVolumeNotificationWindow.close();
+    }
+    if (
+      next.notifications.headsetVolume !== false &&
+      headsetVolumeNotificationWindow &&
+      !headsetVolumeNotificationWindow.isDestroyed()
+    ) {
+      const showChatMix = next.notifications.headsetChatMix !== false;
+      const layout = resolveHeadsetVolumeOsdLayout(showChatMix);
+      headsetVolumeOsdLayout = layout;
+      applyHeadsetVolumeOsdLayout(headsetVolumeNotificationWindow, layout);
+      updateHeadsetVolumeNotificationUi(
+        headsetVolumeNotificationWindow,
+        headsetVolumePendingValue ?? toNullablePercent(cachedState.headset_volume_percent),
+        headsetChatMixPendingValue ?? toNullablePercent(cachedState.chat_mix_balance),
+        showChatMix,
+      );
+    }
+    if (next.notifications.micMute === false && micMuteNotificationWindow && !micMuteNotificationWindow.isDestroyed()) {
+      micMuteNotificationWindow.close();
+    }
+    if (next.notifications.ancMode === false && ancModeNotificationWindow && !ancModeNotificationWindow.isDestroyed()) {
+      ancModeNotificationWindow.close();
+    }
+    if (next.notifications.connectivity === false && connectivityNotificationWindow && !connectivityNotificationWindow.isDestroyed()) {
+      connectivityNotificationWindow.close();
+    }
+    if (next.notifications.battery === false && batteryLowNotificationWindow && !batteryLowNotificationWindow.isDestroyed()) {
+      batteryLowNotificationWindow.close();
+    }
+    if (next.notifications.battery === false && baseBatteryStatusNotificationWindow && !baseBatteryStatusNotificationWindow.isDestroyed()) {
+      baseBatteryStatusNotificationWindow.close();
+    }
+    if (next.notifications.battery === false && headsetBatterySwapNotificationWindow && !headsetBatterySwapNotificationWindow.isDestroyed()) {
+      headsetBatterySwapNotificationWindow.close();
+    }
+    if (next.notifications.battery === false) {
+      clearHeadsetBatterySwapDelayTimer();
+      resetBatterySwapTrack();
     }
     for (const win of allWindows()) {
       win.webContents.send("settings:update", next);
@@ -839,6 +3239,17 @@ function wireIpc(): void {
     const title = String(payload?.title || "").trim() || "Control Centre";
     const body = String(payload?.body || "").trim() || "Notification";
     showSystemNotification(title, body);
+    return { ok: true };
+  });
+  ipcMain.handle("app:notify-battery-low-test", async () => {
+    const threshold = clampPercent(settings.batteryLowThreshold);
+    const level = toNullablePercent(cachedState.headset_battery_percent) ?? Math.max(0, threshold - 1);
+    await showBatteryLowNotification({ battery: level, threshold });
+    return { ok: true };
+  });
+  ipcMain.handle("app:notify-battery-swap-test", async () => {
+    const level = toNullablePercent(cachedState.headset_battery_percent) ?? 74;
+    await showHeadsetBatterySwapNotification({ headsetBattery: level });
     return { ok: true };
   });
   ipcMain.handle("mixer:get-data", async () => {
@@ -1203,7 +3614,7 @@ async function createApp(): Promise<void> {
   await loadWindowPage(mainWindow, "dashboard");
   mainWindowLoaded = true;
   applyFlyoutSizeFromSettings();
-  positionBottomRight(mainWindow);
+  positionBottomRight(mainWindow, resolveUiDisplay());
   if (pendingFlyoutOpen) {
     pendingFlyoutOpen = false;
     showFlyout();
@@ -1273,6 +3684,51 @@ app.whenReady().then(createApp);
 app.on("window-all-closed", () => {});
 app.on("before-quit", () => {
   isQuitting = true;
+  clearHeadsetVolumeNotificationTimer();
+  clearMicMuteNotificationTimer();
+  clearAncModeNotificationTimer();
+  clearConnectivityNotificationTimer();
+  clearBatteryLowNotificationTimer();
+  clearBaseBatteryStatusNotificationTimer();
+  clearHeadsetBatterySwapNotificationTimer();
+  clearHeadsetBatterySwapDelayTimer();
+  headsetVolumePendingValue = null;
+  headsetChatMixPendingValue = null;
+  micMutePendingValue = null;
+  ancModePendingValue = null;
+  connectivityPendingValue = null;
+  batteryLowPendingValue = null;
+  baseBatteryStatusPendingValue = null;
+  headsetBatterySwapPendingValue = null;
+  resetBatterySwapTrack();
+  if (headsetVolumeNotificationWindow && !headsetVolumeNotificationWindow.isDestroyed()) {
+    headsetVolumeNotificationWindow.destroy();
+    headsetVolumeNotificationWindow = null;
+  }
+  if (micMuteNotificationWindow && !micMuteNotificationWindow.isDestroyed()) {
+    micMuteNotificationWindow.destroy();
+    micMuteNotificationWindow = null;
+  }
+  if (ancModeNotificationWindow && !ancModeNotificationWindow.isDestroyed()) {
+    ancModeNotificationWindow.destroy();
+    ancModeNotificationWindow = null;
+  }
+  if (connectivityNotificationWindow && !connectivityNotificationWindow.isDestroyed()) {
+    connectivityNotificationWindow.destroy();
+    connectivityNotificationWindow = null;
+  }
+  if (batteryLowNotificationWindow && !batteryLowNotificationWindow.isDestroyed()) {
+    batteryLowNotificationWindow.destroy();
+    batteryLowNotificationWindow = null;
+  }
+  if (baseBatteryStatusNotificationWindow && !baseBatteryStatusNotificationWindow.isDestroyed()) {
+    baseBatteryStatusNotificationWindow.destroy();
+    baseBatteryStatusNotificationWindow = null;
+  }
+  if (headsetBatterySwapNotificationWindow && !headsetBatterySwapNotificationWindow.isDestroyed()) {
+    headsetBatterySwapNotificationWindow.destroy();
+    headsetBatterySwapNotificationWindow = null;
+  }
   if (persistTimer) {
     clearTimeout(persistTimer);
     persistTimer = null;
@@ -1282,3 +3738,6 @@ app.on("before-quit", () => {
   void stopManagedDdcApi();
   backend?.stop();
 });
+
+
+

@@ -36,8 +36,7 @@ export function createFlyoutWindow(settings: UiSettings): BrowserWindow {
   return win;
 }
 
-export function positionBottomRight(win: BrowserWindow): void {
-  const display = screen.getPrimaryDisplay();
+export function positionBottomRight(win: BrowserWindow, display = screen.getPrimaryDisplay()): void {
   const bounds = display.workArea;
   const windowBounds = win.getBounds();
   const margin = 8;

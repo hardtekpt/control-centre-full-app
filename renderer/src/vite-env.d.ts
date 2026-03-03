@@ -48,6 +48,8 @@ declare global {
       }>;
       openGG: () => Promise<{ ok: boolean; detail: string }>;
       notifyCustom: (title: string, body: string) => Promise<{ ok: boolean }>;
+      notifyBatteryLowTest: () => Promise<{ ok: boolean }>;
+      notifyBatterySwapTest: () => Promise<{ ok: boolean }>;
       getMixerData: () => Promise<{
         outputs: Array<{ id: string; name: string }>;
         selectedOutputId: string;

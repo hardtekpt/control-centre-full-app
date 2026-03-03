@@ -15,18 +15,20 @@ interface SettingsProps {
   onUpdate: (partial: Partial<UiSettings>) => void;
   onRefreshDdcMonitors: () => void;
   onTestNotification: () => void;
+  onTestLowBatteryNotification: () => void;
+  onTestBatterySwapNotification: () => void;
 }
 
 const NOTIFICATION_LABELS: Array<{ key: NotificationKey; label: string }> = [
   { key: "appInfo", label: "Main App Info (Startup/Errors)" },
-  { key: "connectivity", label: "Connect/Disconnect" },
-  { key: "ancMode", label: "ANC Mode" },
+  { key: "connectivity", label: "Connectivity OSD Indicator" },
+  { key: "ancMode", label: "ANC OSD Indicator" },
   { key: "oled", label: "OLED Brightness" },
   { key: "sidetone", label: "Sidetone" },
-  { key: "micMute", label: "MIC Mute State" },
-  { key: "chatMix", label: "Chat Mix" },
-  { key: "headsetVolume", label: "Headset Volume" },
-  { key: "battery", label: "Battery (Low/Charged)" },
+  { key: "micMute", label: "MIC Mute OSD Indicator" },
+  { key: "headsetChatMix", label: "Include Chat Mix In Headset OSD" },
+  { key: "headsetVolume", label: "Headset Volume + Chat Mix OSD" },
+  { key: "battery", label: "Battery OSD Alerts (Low + Base Station Insert/Remove)" },
   { key: "presetChange", label: "Sonar Preset Change" },
 ];
 
@@ -45,6 +47,8 @@ export default function SettingsPage({
   onUpdate,
   onRefreshDdcMonitors,
   onTestNotification,
+  onTestLowBatteryNotification,
+  onTestBatterySwapNotification,
 }: SettingsProps) {
   const [tab, setTab] = useState<SettingsTab>(initialTab);
   const [shortcutDraft, setShortcutDraft] = useState(settings.toggleShortcut);
@@ -114,6 +118,10 @@ export default function SettingsPage({
               <input type="range" min={80} max={140} value={settings.textScale} onChange={(e) => onUpdate({ textScale: Number(e.currentTarget.value) })} />
             </label>
             <label className="form-row">
+              <span>Use active screen for windows/notifications</span>
+              <input type="checkbox" checked={settings.useActiveDisplay} onChange={(e) => onUpdate({ useActiveDisplay: e.currentTarget.checked })} />
+            </label>
+            <label className="form-row">
               <span>Show battery %</span>
               <input type="checkbox" checked={settings.showBatteryPercent} onChange={(e) => onUpdate({ showBatteryPercent: e.currentTarget.checked })} />
             </label>
@@ -165,6 +173,20 @@ export default function SettingsPage({
                 <span>seconds</span>
               </div>
             </label>
+            <label className="form-row">
+              <span>Low battery threshold</span>
+              <div className="accent-row">
+                <input
+                  className="text-input"
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={settings.batteryLowThreshold}
+                  onChange={(e) => onUpdate({ batteryLowThreshold: Number(e.currentTarget.value) || 15 })}
+                />
+                <span>%</span>
+              </div>
+            </label>
             <div className="visible-channels">
               <div className="visible-grid">
                 {NOTIFICATION_LABELS.map((item) => (
@@ -181,6 +203,12 @@ export default function SettingsPage({
               <div style={{ marginTop: "8px" }}>
                 <button className="button" onClick={onTestNotification}>
                   Push Test Notification
+                </button>
+                <button className="button" onClick={onTestLowBatteryNotification} style={{ marginLeft: "8px" }}>
+                  Test Low Battery Notification
+                </button>
+                <button className="button" onClick={onTestBatterySwapNotification} style={{ marginLeft: "8px" }}>
+                  Test Battery Swap Notification
                 </button>
               </div>
             </div>
