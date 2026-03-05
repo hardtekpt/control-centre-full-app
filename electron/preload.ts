@@ -64,6 +64,7 @@ const api = {
   closeCurrentWindow: (): void => ipcRenderer.send("window:close-current"),
   openSettingsWindow: (): void => ipcRenderer.send("window:open-settings"),
   setFlyoutPinned: (pinned: boolean): Promise<{ ok: boolean; pinned: boolean }> => ipcRenderer.invoke("window:set-pinned", pinned),
+  reportFlyoutContentSize: (width: number, height: number): void => ipcRenderer.send("window:fit-content", { width, height }),
   setSettings: (settings: Partial<UiSettings>): Promise<UiSettings> => ipcRenderer.invoke("settings:set", settings),
   onState: (cb: (state: AppState) => void): (() => void) => {
     const fn = (_: unknown, payload: AppState) => cb(payload);

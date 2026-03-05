@@ -21,6 +21,12 @@ let headsetChatMixPendingValue: number | null = null;
 let micMuteNotificationWindow: BrowserWindow | null = null;
 let micMuteNotificationTimer: NodeJS.Timeout | null = null;
 let micMutePendingValue: boolean | null = null;
+let oledNotificationWindow: BrowserWindow | null = null;
+let oledNotificationTimer: NodeJS.Timeout | null = null;
+let oledPendingValue: number | null = null;
+let sidetoneNotificationWindow: BrowserWindow | null = null;
+let sidetoneNotificationTimer: NodeJS.Timeout | null = null;
+let sidetonePendingValue: number | null = null;
 let presetChangeNotificationWindow: BrowserWindow | null = null;
 let presetChangeNotificationTimer: NodeJS.Timeout | null = null;
 let presetChangePendingValue: { channel: ChannelKey; presetName: string } | null = null;
@@ -65,6 +71,8 @@ interface HeadsetBatterySwapNotificationPayload {
 type OsdLayout = { displayId: number; x: number; y: number; width: number; height: number; uiScale: number };
 let headsetVolumeOsdLayout: OsdLayout | null = null;
 let micMuteOsdLayout: OsdLayout | null = null;
+let oledOsdLayout: OsdLayout | null = null;
+let sidetoneOsdLayout: OsdLayout | null = null;
 let presetChangeOsdLayout: OsdLayout | null = null;
 let usbInputOsdLayout: OsdLayout | null = null;
 let ancModeOsdLayout: OsdLayout | null = null;
@@ -108,6 +116,8 @@ const HEADSET_VOLUME_OSD_BASE_HEIGHT_DOUBLE = 70;
 const MIC_MUTE_OSD_BASE_SIZE = 62;
 const MIC_MUTE_LIVE_ACCENT = "#3fcf8e";
 const MIC_MUTE_MUTED_ACCENT = "#ef5350";
+const OLED_OSD_BASE_SIZE = 108;
+const SIDETONE_OSD_BASE_SIZE = 108;
 const PRESET_CHANGE_OSD_BASE_WIDTH = 256;
 const PRESET_CHANGE_OSD_BASE_HEIGHT = 58;
 const USB_INPUT_OSD_BASE_SIZE = 102;
@@ -126,6 +136,10 @@ const BASE_BATTERY_INSERTED_ACCENT = "#3fcf8e";
 const BASE_BATTERY_REMOVED_ACCENT = "#ef5350";
 const HEADSET_BATTERY_SWAP_OSD_BASE_SIZE = 108;
 const HEADSET_BATTERY_SWAP_ACCENT = "#3fcf8e";
+const FLYOUT_MIN_WIDTH = 320;
+const FLYOUT_MAX_WIDTH = 4096;
+const FLYOUT_MIN_HEIGHT = 260;
+const FLYOUT_MAX_HEIGHT = 2160;
 
 const batterySwapTrack = {
   armed: false,
@@ -460,6 +474,20 @@ function clearMicMuteNotificationTimer(): void {
   }
 }
 
+function clearOledNotificationTimer(): void {
+  if (oledNotificationTimer) {
+    clearTimeout(oledNotificationTimer);
+    oledNotificationTimer = null;
+  }
+}
+
+function clearSidetoneNotificationTimer(): void {
+  if (sidetoneNotificationTimer) {
+    clearTimeout(sidetoneNotificationTimer);
+    sidetoneNotificationTimer = null;
+  }
+}
+
 function clearPresetChangeNotificationTimer(): void {
   if (presetChangeNotificationTimer) {
     clearTimeout(presetChangeNotificationTimer);
@@ -531,6 +559,26 @@ function scheduleMicMuteNotificationClose(win: BrowserWindow): void {
   clearMicMuteNotificationTimer();
   micMuteNotificationTimer = setTimeout(() => {
     micMuteNotificationTimer = null;
+    if (!win.isDestroyed()) {
+      win.close();
+    }
+  }, Math.max(2, settings.notificationTimeout) * 1000);
+}
+
+function scheduleOledNotificationClose(win: BrowserWindow): void {
+  clearOledNotificationTimer();
+  oledNotificationTimer = setTimeout(() => {
+    oledNotificationTimer = null;
+    if (!win.isDestroyed()) {
+      win.close();
+    }
+  }, Math.max(2, settings.notificationTimeout) * 1000);
+}
+
+function scheduleSidetoneNotificationClose(win: BrowserWindow): void {
+  clearSidetoneNotificationTimer();
+  sidetoneNotificationTimer = setTimeout(() => {
+    sidetoneNotificationTimer = null;
     if (!win.isDestroyed()) {
       win.close();
     }
@@ -611,6 +659,14 @@ function scheduleHeadsetBatterySwapNotificationClose(win: BrowserWindow): void {
 
 function clampNumber(value: number, low: number, high: number): number {
   return Math.min(high, Math.max(low, value));
+}
+
+function resolveFlyoutFitLimits(): { maxWidth: number; maxHeight: number } {
+  const workArea = resolveUiDisplay().workArea;
+  return {
+    maxWidth: clampNumber(workArea.width - 16, FLYOUT_MIN_WIDTH, FLYOUT_MAX_WIDTH),
+    maxHeight: clampNumber(workArea.height - 16, FLYOUT_MIN_HEIGHT, FLYOUT_MAX_HEIGHT),
+  };
 }
 
 function resolveUiDisplay(): Electron.Display {
@@ -719,6 +775,42 @@ function resolveBatteryLowOsdLayout(): OsdLayout {
   const workArea = display.workArea;
   const resolutionScale = clampNumber(Math.min(workArea.width / 1920, workArea.height / 1080), 0.82, 1.18);
   const size = Math.max(88, Math.round(BATTERY_LOW_OSD_BASE_SIZE * resolutionScale));
+  const margin = Math.max(10, Math.round(12 * resolutionScale));
+  const x = Math.round(workArea.x + (workArea.width - size) / 2);
+  const y = workArea.y + workArea.height - size - margin;
+  return {
+    displayId: display.id,
+    x,
+    y,
+    width: size,
+    height: size,
+    uiScale: resolutionScale,
+  };
+}
+
+function resolveOledOsdLayout(): OsdLayout {
+  const display = resolveUiDisplay();
+  const workArea = display.workArea;
+  const resolutionScale = clampNumber(Math.min(workArea.width / 1920, workArea.height / 1080), 0.82, 1.18);
+  const size = Math.max(92, Math.round(OLED_OSD_BASE_SIZE * resolutionScale));
+  const margin = Math.max(10, Math.round(12 * resolutionScale));
+  const x = Math.round(workArea.x + (workArea.width - size) / 2);
+  const y = workArea.y + workArea.height - size - margin;
+  return {
+    displayId: display.id,
+    x,
+    y,
+    width: size,
+    height: size,
+    uiScale: resolutionScale,
+  };
+}
+
+function resolveSidetoneOsdLayout(): OsdLayout {
+  const display = resolveUiDisplay();
+  const workArea = display.workArea;
+  const resolutionScale = clampNumber(Math.min(workArea.width / 1920, workArea.height / 1080), 0.82, 1.18);
+  const size = Math.max(92, Math.round(SIDETONE_OSD_BASE_SIZE * resolutionScale));
   const margin = Math.max(10, Math.round(12 * resolutionScale));
   const x = Math.round(workArea.x + (workArea.width - size) / 2);
   const y = workArea.y + workArea.height - size - margin;
@@ -884,6 +976,13 @@ function applyUsbInputInference(state: AppState): AppState {
 
 function toOsdValueLabel(value: number | null): string {
   return value == null ? "--" : String(value);
+}
+
+function toNumericNotificationLabel(value: number | null): string {
+  if (value == null || !Number.isFinite(value)) {
+    return "--";
+  }
+  return String(Math.round(value));
 }
 
 function updateHeadsetVolumeNotificationUi(
@@ -1371,6 +1470,458 @@ async function showMicMuteNotification(muted: boolean): Promise<void> {
     micMutePendingValue = null;
     micMuteOsdLayout = null;
     clearMicMuteNotificationTimer();
+  });
+}
+
+function updateOledNotificationScale(win: BrowserWindow, uiScale: number): void {
+  const scale = clampNumber(uiScale, 0.75, 1.5).toFixed(4);
+  void win.webContents
+    .executeJavaScript(`window.__setOledScale?.(${scale});`, true)
+    .catch(() => undefined);
+}
+
+function updateOledNotificationPalette(win: BrowserWindow, palette: { panelBg: string; textColor: string }, accent: string): void {
+  const safeBg = String(palette.panelBg || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const safeText = String(palette.textColor || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const safeAccent = String(accent || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  if (!safeBg || !safeText || !safeAccent) {
+    return;
+  }
+  void win.webContents
+    .executeJavaScript(`window.__setOledPalette?.('${safeBg}','${safeText}','${safeAccent}');`, true)
+    .catch(() => undefined);
+}
+
+function updateOledNotificationUi(win: BrowserWindow, value: number | null): void {
+  void win.webContents
+    .executeJavaScript(`window.__setOledValue?.(${JSON.stringify(toNumericNotificationLabel(value))});`, true)
+    .catch(() => undefined);
+}
+
+function applyOledOsdLayout(win: BrowserWindow, layout: OsdLayout): void {
+  win.setMinimumSize(layout.width, layout.height);
+  win.setMaximumSize(layout.width, layout.height);
+  const bounds = win.getBounds();
+  if (bounds.x !== layout.x || bounds.y !== layout.y || bounds.width !== layout.width || bounds.height !== layout.height) {
+    win.setBounds(
+      {
+        x: layout.x,
+        y: layout.y,
+        width: layout.width,
+        height: layout.height,
+      },
+      false,
+    );
+  }
+  updateOledNotificationScale(win, layout.uiScale);
+}
+
+async function showOledNotification(value: number): Promise<void> {
+  oledPendingValue = Number.isFinite(value) ? Number(value) : null;
+  if (oledPendingValue == null) {
+    return;
+  }
+  const nextLayout = resolveOledOsdLayout();
+  const theme = await getThemePayload();
+  const palette = resolveHeadsetVolumeNotificationPalette(theme);
+  const accent = settings.accentColor.trim() || theme.accent;
+
+  if (oledNotificationWindow && !oledNotificationWindow.isDestroyed()) {
+    const win = oledNotificationWindow;
+    if (!win.isVisible()) {
+      applyOledOsdLayout(win, nextLayout);
+      oledOsdLayout = nextLayout;
+      win.showInactive();
+    }
+    updateOledNotificationPalette(win, palette, accent);
+    updateOledNotificationUi(win, oledPendingValue);
+    scheduleOledNotificationClose(win);
+    return;
+  }
+
+  const html = `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data:;" />
+      <style>
+        :root {
+          color-scheme: dark;
+          --s: ${nextLayout.uiScale.toFixed(4)};
+          --panel-bg: ${palette.panelBg};
+          --text-color: ${palette.textColor};
+          --accent: ${accent};
+        }
+        html, body {
+          margin: 0;
+          width: 100%;
+          height: 100%;
+          background: transparent;
+          overflow: hidden;
+          font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+        }
+        .shell {
+          width: 100%;
+          height: 100%;
+          box-sizing: border-box;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.14);
+          background: var(--panel-bg);
+          box-shadow: 0 8px 18px rgba(0,0,0,0.38);
+          display: grid;
+          place-items: center;
+          padding: calc(9px * var(--s));
+        }
+        .stack {
+          display: grid;
+          justify-items: center;
+          align-content: center;
+          row-gap: calc(4px * var(--s));
+          line-height: 1;
+        }
+        .headset {
+          width: calc(18px * var(--s));
+          height: calc(18px * var(--s));
+          color: var(--text-color);
+        }
+        .headset svg {
+          width: 100%;
+          height: 100%;
+          display: block;
+        }
+        .label {
+          color: var(--text-color);
+          font-size: calc(7.2px * var(--s));
+          font-weight: 700;
+          letter-spacing: 0.05em;
+          text-transform: uppercase;
+          opacity: 0.9;
+        }
+        .value {
+          color: var(--accent);
+          font-size: calc(28px * var(--s));
+          font-weight: 800;
+          letter-spacing: 0.01em;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="shell" aria-label="OLED brightness">
+        <div class="stack">
+          <div class="headset" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18">
+              <path d="M4 13a8 8 0 1 1 16 0v5a2 2 0 0 1-2 2h-1v-6h1v-1a6 6 0 1 0-12 0v1h1v6H6a2 2 0 0 1-2-2z" fill="currentColor" />
+            </svg>
+          </div>
+          <div class="label">OLED BRIGHTNESS</div>
+          <div id="value" class="value">${toNumericNotificationLabel(oledPendingValue)}</div>
+        </div>
+      </div>
+      <script>
+        (function () {
+          const root = document.documentElement;
+          const valueEl = document.getElementById("value");
+          window.__setOledPalette = (bg, text, accent) => {
+            const nextBg = String(bg || "").trim();
+            const nextText = String(text || "").trim();
+            const nextAccent = String(accent || "").trim();
+            if (nextBg) root.style.setProperty("--panel-bg", nextBg);
+            if (nextText) root.style.setProperty("--text-color", nextText);
+            if (nextAccent) root.style.setProperty("--accent", nextAccent);
+          };
+          window.__setOledScale = (s) => {
+            const nextScale = Math.max(0.75, Math.min(1.5, Number(s) || 1));
+            root.style.setProperty("--s", String(nextScale));
+          };
+          window.__setOledValue = (next) => {
+            const text = String(next ?? "--").trim() || "--";
+            if (valueEl) valueEl.textContent = text;
+          };
+          window.__setOledValue(${JSON.stringify(toNumericNotificationLabel(oledPendingValue))});
+        })();
+      </script>
+    </body>
+  </html>`;
+
+  const win = new BrowserWindow({
+    width: nextLayout.width,
+    height: nextLayout.height,
+    minWidth: nextLayout.width,
+    maxWidth: nextLayout.width,
+    minHeight: nextLayout.height,
+    maxHeight: nextLayout.height,
+    show: false,
+    frame: false,
+    transparent: true,
+    backgroundColor: "#00000000",
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    focusable: false,
+    hasShadow: false,
+  });
+
+  oledNotificationWindow = win;
+  oledOsdLayout = nextLayout;
+  await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  win.setAlwaysOnTop(true, "screen-saver");
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+  const showOledOsd = () => {
+    if (win.isDestroyed()) {
+      return;
+    }
+    const layout = oledOsdLayout ?? nextLayout;
+    applyOledOsdLayout(win, layout);
+    updateOledNotificationPalette(win, palette, accent);
+    win.showInactive();
+    updateOledNotificationUi(win, oledPendingValue);
+    scheduleOledNotificationClose(win);
+  };
+
+  win.once("ready-to-show", showOledOsd);
+  win.webContents.once("did-finish-load", () => {
+    if (!win.isVisible()) {
+      showOledOsd();
+    }
+  });
+  win.on("closed", () => {
+    if (oledNotificationWindow === win) {
+      oledNotificationWindow = null;
+    }
+    oledPendingValue = null;
+    oledOsdLayout = null;
+    clearOledNotificationTimer();
+  });
+}
+
+function updateSidetoneNotificationScale(win: BrowserWindow, uiScale: number): void {
+  const scale = clampNumber(uiScale, 0.75, 1.5).toFixed(4);
+  void win.webContents
+    .executeJavaScript(`window.__setSidetoneScale?.(${scale});`, true)
+    .catch(() => undefined);
+}
+
+function updateSidetoneNotificationPalette(win: BrowserWindow, palette: { panelBg: string; textColor: string }, accent: string): void {
+  const safeBg = String(palette.panelBg || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const safeText = String(palette.textColor || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  const safeAccent = String(accent || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+  if (!safeBg || !safeText || !safeAccent) {
+    return;
+  }
+  void win.webContents
+    .executeJavaScript(`window.__setSidetonePalette?.('${safeBg}','${safeText}','${safeAccent}');`, true)
+    .catch(() => undefined);
+}
+
+function updateSidetoneNotificationUi(win: BrowserWindow, value: number | null): void {
+  void win.webContents
+    .executeJavaScript(`window.__setSidetoneValue?.(${JSON.stringify(toNumericNotificationLabel(value))});`, true)
+    .catch(() => undefined);
+}
+
+function applySidetoneOsdLayout(win: BrowserWindow, layout: OsdLayout): void {
+  win.setMinimumSize(layout.width, layout.height);
+  win.setMaximumSize(layout.width, layout.height);
+  const bounds = win.getBounds();
+  if (bounds.x !== layout.x || bounds.y !== layout.y || bounds.width !== layout.width || bounds.height !== layout.height) {
+    win.setBounds(
+      {
+        x: layout.x,
+        y: layout.y,
+        width: layout.width,
+        height: layout.height,
+      },
+      false,
+    );
+  }
+  updateSidetoneNotificationScale(win, layout.uiScale);
+}
+
+async function showSidetoneNotification(value: number): Promise<void> {
+  sidetonePendingValue = Number.isFinite(value) ? Number(value) : null;
+  if (sidetonePendingValue == null) {
+    return;
+  }
+  const nextLayout = resolveSidetoneOsdLayout();
+  const theme = await getThemePayload();
+  const palette = resolveHeadsetVolumeNotificationPalette(theme);
+  const accent = settings.accentColor.trim() || theme.accent;
+
+  if (sidetoneNotificationWindow && !sidetoneNotificationWindow.isDestroyed()) {
+    const win = sidetoneNotificationWindow;
+    if (!win.isVisible()) {
+      applySidetoneOsdLayout(win, nextLayout);
+      sidetoneOsdLayout = nextLayout;
+      win.showInactive();
+    }
+    updateSidetoneNotificationPalette(win, palette, accent);
+    updateSidetoneNotificationUi(win, sidetonePendingValue);
+    scheduleSidetoneNotificationClose(win);
+    return;
+  }
+
+  const html = `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data:;" />
+      <style>
+        :root {
+          color-scheme: dark;
+          --s: ${nextLayout.uiScale.toFixed(4)};
+          --panel-bg: ${palette.panelBg};
+          --text-color: ${palette.textColor};
+          --accent: ${accent};
+        }
+        html, body {
+          margin: 0;
+          width: 100%;
+          height: 100%;
+          background: transparent;
+          overflow: hidden;
+          font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+        }
+        .shell {
+          width: 100%;
+          height: 100%;
+          box-sizing: border-box;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.14);
+          background: var(--panel-bg);
+          box-shadow: 0 8px 18px rgba(0,0,0,0.38);
+          display: grid;
+          place-items: center;
+          padding: calc(9px * var(--s));
+        }
+        .stack {
+          display: grid;
+          justify-items: center;
+          align-content: center;
+          row-gap: calc(4px * var(--s));
+          line-height: 1;
+        }
+        .headset {
+          width: calc(18px * var(--s));
+          height: calc(18px * var(--s));
+          color: var(--text-color);
+        }
+        .headset svg {
+          width: 100%;
+          height: 100%;
+          display: block;
+        }
+        .label {
+          color: var(--text-color);
+          font-size: calc(7.2px * var(--s));
+          font-weight: 700;
+          letter-spacing: 0.05em;
+          text-transform: uppercase;
+          opacity: 0.9;
+        }
+        .value {
+          color: var(--accent);
+          font-size: calc(28px * var(--s));
+          font-weight: 800;
+          letter-spacing: 0.01em;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="shell" aria-label="Sidetone level">
+        <div class="stack">
+          <div class="headset" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18">
+              <path d="M4 13a8 8 0 1 1 16 0v5a2 2 0 0 1-2 2h-1v-6h1v-1a6 6 0 1 0-12 0v1h1v6H6a2 2 0 0 1-2-2z" fill="currentColor" />
+            </svg>
+          </div>
+          <div class="label">SIDETONE</div>
+          <div id="value" class="value">${toNumericNotificationLabel(sidetonePendingValue)}</div>
+        </div>
+      </div>
+      <script>
+        (function () {
+          const root = document.documentElement;
+          const valueEl = document.getElementById("value");
+          window.__setSidetonePalette = (bg, text, accent) => {
+            const nextBg = String(bg || "").trim();
+            const nextText = String(text || "").trim();
+            const nextAccent = String(accent || "").trim();
+            if (nextBg) root.style.setProperty("--panel-bg", nextBg);
+            if (nextText) root.style.setProperty("--text-color", nextText);
+            if (nextAccent) root.style.setProperty("--accent", nextAccent);
+          };
+          window.__setSidetoneScale = (s) => {
+            const nextScale = Math.max(0.75, Math.min(1.5, Number(s) || 1));
+            root.style.setProperty("--s", String(nextScale));
+          };
+          window.__setSidetoneValue = (next) => {
+            const text = String(next ?? "--").trim() || "--";
+            if (valueEl) valueEl.textContent = text;
+          };
+          window.__setSidetoneValue(${JSON.stringify(toNumericNotificationLabel(sidetonePendingValue))});
+        })();
+      </script>
+    </body>
+  </html>`;
+
+  const win = new BrowserWindow({
+    width: nextLayout.width,
+    height: nextLayout.height,
+    minWidth: nextLayout.width,
+    maxWidth: nextLayout.width,
+    minHeight: nextLayout.height,
+    maxHeight: nextLayout.height,
+    show: false,
+    frame: false,
+    transparent: true,
+    backgroundColor: "#00000000",
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    focusable: false,
+    hasShadow: false,
+  });
+
+  sidetoneNotificationWindow = win;
+  sidetoneOsdLayout = nextLayout;
+  await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  win.setAlwaysOnTop(true, "screen-saver");
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+  const showSidetoneOsd = () => {
+    if (win.isDestroyed()) {
+      return;
+    }
+    const layout = sidetoneOsdLayout ?? nextLayout;
+    applySidetoneOsdLayout(win, layout);
+    updateSidetoneNotificationPalette(win, palette, accent);
+    win.showInactive();
+    updateSidetoneNotificationUi(win, sidetonePendingValue);
+    scheduleSidetoneNotificationClose(win);
+  };
+
+  win.once("ready-to-show", showSidetoneOsd);
+  win.webContents.once("did-finish-load", () => {
+    if (!win.isVisible()) {
+      showSidetoneOsd();
+    }
+  });
+  win.on("closed", () => {
+    if (sidetoneNotificationWindow === win) {
+      sidetoneNotificationWindow = null;
+    }
+    sidetonePendingValue = null;
+    sidetoneOsdLayout = null;
+    clearSidetoneNotificationTimer();
   });
 }
 
@@ -2161,7 +2712,7 @@ async function showConnectivityNotification(payload: ConnectivityNotificationPay
           --ok: ${CONNECTIVITY_CONNECTED_ACCENT};
           --bad: ${CONNECTIVITY_DISCONNECTED_ACCENT};
           --accent: var(--ok);
-          --bar-off: rgba(255,255,255,0.34);
+          --bar-off: rgba(145,145,145,0.92);
         }
         html, body {
           margin: 0;
@@ -2234,6 +2785,8 @@ async function showConnectivityNotification(payload: ConnectivityNotificationPay
         .battery .bar {
           fill: var(--bar-off);
           opacity: 1;
+          stroke: rgba(0,0,0,0.22);
+          stroke-width: 0.3;
         }
       </style>
     </head>
@@ -2280,11 +2833,13 @@ async function showConnectivityNotification(payload: ConnectivityNotificationPay
           const wifiEl = document.getElementById("wifi");
           const btEl = document.getElementById("bt");
           const bars = [1, 2, 3, 4].map((n) => document.getElementById("bar" + n));
+          let activeBarColor = "${CONNECTIVITY_CONNECTED_ACCENT}";
           const paintBars = (activeBars) => {
             const count = Math.max(0, Math.min(4, Math.round(Number(activeBars) || 0)));
             bars.forEach((bar, idx) => {
               if (!bar) return;
-              bar.style.fill = idx < count ? "var(--accent)" : "var(--bar-off)";
+              bar.style.fill = idx < count ? activeBarColor : "var(--bar-off)";
+              bar.style.opacity = idx < count ? "1" : "0.96";
             });
           };
           const applyBattery = (value) => {
@@ -2302,7 +2857,8 @@ async function showConnectivityNotification(payload: ConnectivityNotificationPay
             const connected = Boolean(state.connected);
             const wireless = Boolean(state.wireless);
             const bluetooth = Boolean(state.bluetooth);
-            root.style.setProperty("--accent", connected ? "var(--ok)" : "var(--bad)");
+            activeBarColor = connected ? "${CONNECTIVITY_CONNECTED_ACCENT}" : "${CONNECTIVITY_DISCONNECTED_ACCENT}";
+            root.style.setProperty("--accent", activeBarColor);
             if (statusEl) statusEl.textContent = connected ? "CONNECTED" : "DISCONNECTED";
             const showTransport = connected && (wireless || bluetooth);
             if (transportEl) transportEl.style.display = showTransport ? "flex" : "none";
@@ -3254,10 +3810,10 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
     void showAncModeNotification(next.anc_mode);
   }
   if (isNotifEnabled("oled") && previous.oled_brightness !== next.oled_brightness && next.oled_brightness != null) {
-    showSystemNotification("Control Centre", `OLED brightness: ${next.oled_brightness}`);
+    void showOledNotification(next.oled_brightness);
   }
   if (isNotifEnabled("sidetone") && previous.sidetone_level !== next.sidetone_level && next.sidetone_level != null) {
-    showSystemNotification("Control Centre", `Sidetone: ${next.sidetone_level}`);
+    void showSidetoneNotification(next.sidetone_level);
   }
   if (isNotifEnabled("micMute") && previous.mic_mute !== next.mic_mute && next.mic_mute != null) {
     void showMicMuteNotification(next.mic_mute);
@@ -3538,9 +4094,36 @@ function applyFlyoutSizeFromSettings(): void {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return;
   }
-  const width = Math.max(320, Math.min(1000, Number(settings.flyoutWidth) || 760));
-  const height = Math.max(260, Math.min(1200, Number(settings.flyoutHeight) || 520));
-  mainWindow.setContentSize(width, height, false);
+  const limits = resolveFlyoutFitLimits();
+  const width = clampNumber(Number(settings.flyoutWidth) || 760, FLYOUT_MIN_WIDTH, limits.maxWidth);
+  const height = clampNumber(Number(settings.flyoutHeight) || 520, FLYOUT_MIN_HEIGHT, limits.maxHeight);
+  const [currentWidth, currentHeight] = mainWindow.getContentSize();
+  if (currentWidth !== width || currentHeight !== height) {
+    mainWindow.setContentSize(width, height, false);
+  }
+}
+
+function fitFlyoutToContent(width: number, height: number): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  const limits = resolveFlyoutFitLimits();
+  const nextWidth = clampNumber(Math.round(width), FLYOUT_MIN_WIDTH, limits.maxWidth);
+  const nextHeight = clampNumber(Math.round(height), FLYOUT_MIN_HEIGHT, limits.maxHeight);
+  const [currentWidth, currentHeight] = mainWindow.getContentSize();
+  if (currentWidth === nextWidth && currentHeight === nextHeight) {
+    return;
+  }
+  mainWindow.setContentSize(nextWidth, nextHeight, false);
+  positionBottomRight(mainWindow, resolveUiDisplay());
+  if (settings.flyoutWidth !== nextWidth || settings.flyoutHeight !== nextHeight) {
+    settings = mergeSettings({
+      ...settings,
+      flyoutWidth: nextWidth,
+      flyoutHeight: nextHeight,
+    });
+    schedulePersist();
+  }
 }
 
 function relayoutNotificationWindows(): void {
@@ -3879,6 +4462,20 @@ function wireIpc(): void {
     }
     win.close();
   });
+  ipcMain.on("window:fit-content", (evt, payload: { width?: number; height?: number }) => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return;
+    }
+    if (evt.sender !== mainWindow.webContents) {
+      return;
+    }
+    const width = Number(payload?.width);
+    const height = Number(payload?.height);
+    if (!Number.isFinite(width) || !Number.isFinite(height)) {
+      return;
+    }
+    fitFlyoutToContent(width, height);
+  });
   ipcMain.handle("settings:set", (_evt, partial: Partial<UiSettings>) => {
     const next = persistSettings({
       ...settings,
@@ -3922,6 +4519,12 @@ function wireIpc(): void {
     }
     if (next.notifications.micMute === false && micMuteNotificationWindow && !micMuteNotificationWindow.isDestroyed()) {
       micMuteNotificationWindow.close();
+    }
+    if (next.notifications.oled === false && oledNotificationWindow && !oledNotificationWindow.isDestroyed()) {
+      oledNotificationWindow.close();
+    }
+    if (next.notifications.sidetone === false && sidetoneNotificationWindow && !sidetoneNotificationWindow.isDestroyed()) {
+      sidetoneNotificationWindow.close();
     }
     if (next.notifications.presetChange === false && presetChangeNotificationWindow && !presetChangeNotificationWindow.isDestroyed()) {
       presetChangeNotificationWindow.close();
@@ -4427,6 +5030,8 @@ app.on("before-quit", () => {
   isQuitting = true;
   clearHeadsetVolumeNotificationTimer();
   clearMicMuteNotificationTimer();
+  clearOledNotificationTimer();
+  clearSidetoneNotificationTimer();
   clearPresetChangeNotificationTimer();
   clearUsbInputNotificationTimer();
   clearAncModeNotificationTimer();
@@ -4438,6 +5043,10 @@ app.on("before-quit", () => {
   headsetVolumePendingValue = null;
   headsetChatMixPendingValue = null;
   micMutePendingValue = null;
+  oledPendingValue = null;
+  sidetonePendingValue = null;
+  oledOsdLayout = null;
+  sidetoneOsdLayout = null;
   presetChangePendingValue = null;
   presetChangeOsdLayout = null;
   usbInputPendingValue = null;
@@ -4454,6 +5063,14 @@ app.on("before-quit", () => {
   if (micMuteNotificationWindow && !micMuteNotificationWindow.isDestroyed()) {
     micMuteNotificationWindow.destroy();
     micMuteNotificationWindow = null;
+  }
+  if (oledNotificationWindow && !oledNotificationWindow.isDestroyed()) {
+    oledNotificationWindow.destroy();
+    oledNotificationWindow = null;
+  }
+  if (sidetoneNotificationWindow && !sidetoneNotificationWindow.isDestroyed()) {
+    sidetoneNotificationWindow.destroy();
+    sidetoneNotificationWindow = null;
   }
   if (presetChangeNotificationWindow && !presetChangeNotificationWindow.isDestroyed()) {
     presetChangeNotificationWindow.destroy();

@@ -111,6 +111,7 @@ declare global {
       closeCurrentWindow: () => void;
       openSettingsWindow: () => void;
       setFlyoutPinned: (pinned: boolean) => Promise<{ ok: boolean; pinned: boolean }>;
+      reportFlyoutContentSize: (width: number, height: number) => void;
       setSettings: (settings: Partial<UiSettings>) => Promise<UiSettings>;
       onState: (cb: (state: AppState) => void) => () => void;
       onPresets: (cb: (presets: PresetMap) => void) => () => void;

@@ -1,8 +1,91 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import DashboardPage from "./pages/DashboardPage";
 import SettingsPage from "./pages/SettingsPage";
 import { useBridgeState } from "./state/store";
 import { DEFAULT_SETTINGS } from "@shared/settings";
+
+function parsePx(value: string): number {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function intrinsicSize(el: HTMLElement): { width: number; height: number } {
+  const width = Math.ceil(el.scrollWidth || el.clientWidth || el.offsetWidth || 0);
+  const height = Math.ceil(el.scrollHeight || el.clientHeight || el.offsetHeight || 0);
+  return { width, height };
+}
+
+function measureContainerChildren(container: HTMLElement): { width: number; height: number } {
+  const style = window.getComputedStyle(container);
+  const paddingLeft = parsePx(style.paddingLeft);
+  const paddingRight = parsePx(style.paddingRight);
+  const paddingTop = parsePx(style.paddingTop);
+  const paddingBottom = parsePx(style.paddingBottom);
+  const rowGap = parsePx(style.rowGap || style.gap || "0");
+  const children = Array.from(container.children).filter((node): node is HTMLElement => node instanceof HTMLElement);
+  let contentWidth = 0;
+  let contentHeight = 0;
+  for (let idx = 0; idx < children.length; idx += 1) {
+    const child = children[idx];
+    const childStyle = window.getComputedStyle(child);
+    const marginLeft = parsePx(childStyle.marginLeft);
+    const marginRight = parsePx(childStyle.marginRight);
+    const marginTop = parsePx(childStyle.marginTop);
+    const marginBottom = parsePx(childStyle.marginBottom);
+    const measured = measureElementIntrinsic(child);
+    const childWidth = measured.width + marginLeft + marginRight;
+    const childHeight = measured.height + marginTop + marginBottom;
+    contentWidth = Math.max(contentWidth, childWidth);
+    contentHeight += childHeight;
+    if (idx > 0) {
+      contentHeight += rowGap;
+    }
+  }
+  return {
+    width: Math.ceil(contentWidth + paddingLeft + paddingRight),
+    height: Math.ceil(contentHeight + paddingTop + paddingBottom),
+  };
+}
+
+function measureElementIntrinsic(el: HTMLElement): { width: number; height: number } {
+  if (el.classList.contains("dashboard-page")) {
+    return measureContainerChildren(el);
+  }
+  return intrinsicSize(el);
+}
+
+function measureFlyoutShellContent(shell: HTMLElement): { width: number; height: number } {
+  const shellStyle = window.getComputedStyle(shell);
+  const paddingLeft = parsePx(shellStyle.paddingLeft);
+  const paddingRight = parsePx(shellStyle.paddingRight);
+  const paddingTop = parsePx(shellStyle.paddingTop);
+  const paddingBottom = parsePx(shellStyle.paddingBottom);
+  const rowGap = parsePx(shellStyle.rowGap || shellStyle.gap || "0");
+  const children = Array.from(shell.children).filter((node): node is HTMLElement => node instanceof HTMLElement);
+  let contentWidth = 0;
+  let contentHeight = 0;
+  for (let idx = 0; idx < children.length; idx += 1) {
+    const child = children[idx];
+    const childStyle = window.getComputedStyle(child);
+    const marginLeft = parsePx(childStyle.marginLeft);
+    const marginRight = parsePx(childStyle.marginRight);
+    const marginTop = parsePx(childStyle.marginTop);
+    const marginBottom = parsePx(childStyle.marginBottom);
+    const measured = measureElementIntrinsic(child);
+    const childWidth = measured.width + marginLeft + marginRight;
+    const childHeight = measured.height + marginTop + marginBottom;
+    contentWidth = Math.max(contentWidth, childWidth);
+    contentHeight += childHeight;
+    if (idx > 0) {
+      contentHeight += rowGap;
+    }
+  }
+  return {
+    width: Math.ceil(contentWidth + paddingLeft + paddingRight),
+    // Keep a small safety inset so bottom spacing is preserved after fit.
+    height: Math.ceil(contentHeight + paddingTop + paddingBottom + 2),
+  };
+}
 
 function BatteryTypeIcon({ kind }: { kind: "headset" | "charging" }) {
   if (kind === "headset") {
@@ -74,6 +157,48 @@ function LiveApp({ windowMode }: { windowMode: "dashboard" | "settings" }) {
     useBridgeState();
   const resolvedSettings = settings ?? DEFAULT_SETTINGS;
   const visibleChannels = settings?.visibleChannels ?? [];
+  const lastReportedSizeRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 });
+
+  useEffect(() => {
+    if (windowMode !== "dashboard") {
+      return;
+    }
+    const shell = document.querySelector("main.window-base.app-shell") as HTMLElement | null;
+    if (!shell) {
+      return;
+    }
+    let rafId = 0;
+    const reportSize = () => {
+      rafId = 0;
+      const { width, height } = measureFlyoutShellContent(shell);
+      const prev = lastReportedSizeRef.current;
+      if (width === prev.width && height === prev.height) {
+        return;
+      }
+      lastReportedSizeRef.current = { width, height };
+      window.arctisBridge.reportFlyoutContentSize(width, height);
+    };
+    const scheduleReport = () => {
+      if (rafId) {
+        return;
+      }
+      rafId = window.requestAnimationFrame(reportSize);
+    };
+    scheduleReport();
+    const resizeObserver = new ResizeObserver(() => scheduleReport());
+    resizeObserver.observe(shell);
+    const mutationObserver = new MutationObserver(() => scheduleReport());
+    mutationObserver.observe(shell, { subtree: true, childList: true, characterData: true, attributes: true });
+    window.addEventListener("resize", scheduleReport);
+    return () => {
+      if (rafId) {
+        window.cancelAnimationFrame(rafId);
+      }
+      resizeObserver.disconnect();
+      mutationObserver.disconnect();
+      window.removeEventListener("resize", scheduleReport);
+    };
+  }, [windowMode]);
 
   if (windowMode === "settings") {
     return (

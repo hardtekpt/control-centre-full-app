@@ -101,10 +101,11 @@
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto;
   gap: 8px;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   width: 100%;
   max-width: 100%;
   height: auto;
+  align-content: start;
   align-items: start;
   justify-items: stretch;
   min-width: 0;
