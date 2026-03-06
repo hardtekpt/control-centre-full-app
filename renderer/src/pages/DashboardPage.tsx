@@ -9,6 +9,7 @@ interface DashboardPageProps {
   state: AppState;
   presets: PresetMap;
   visibleChannels: ChannelKey[];
+  windowsMixerEnabled: boolean;
   mixerData: MixerData;
   onSetVolume: (channel: string, value: number) => void;
   onSetMute: (channel: string, value: boolean) => void;
@@ -22,12 +23,19 @@ interface DashboardPageProps {
 export default function DashboardPage(props: DashboardPageProps) {
   const [tab, setTab] = useState<"sonar" | "windows">("sonar");
   const visible = CHANNELS.filter((channel) => props.visibleChannels.includes(channel));
+  const windowsMixerEnabled = props.windowsMixerEnabled !== false;
 
   useEffect(() => {
-    if (tab === "windows") {
+    if (tab === "windows" && windowsMixerEnabled) {
       props.onRefreshMixer();
     }
-  }, [tab]);
+  }, [tab, windowsMixerEnabled]);
+
+  useEffect(() => {
+    if (!windowsMixerEnabled && tab === "windows") {
+      setTab("sonar");
+    }
+  }, [tab, windowsMixerEnabled]);
 
   return (
     <div className="dashboard-page">
@@ -38,9 +46,11 @@ export default function DashboardPage(props: DashboardPageProps) {
             <button className={`tab-btn ${tab === "sonar" ? "active" : ""}`} onClick={() => setTab("sonar")}>
               Sonar Channels
             </button>
-            <button className={`tab-btn ${tab === "windows" ? "active" : ""}`} onClick={() => setTab("windows")}>
-              Windows Mixer
-            </button>
+            {windowsMixerEnabled && (
+              <button className={`tab-btn ${tab === "windows" ? "active" : ""}`} onClick={() => setTab("windows")}>
+                Windows Mixer
+              </button>
+            )}
           </div>
         </div>
         {tab === "sonar" && (
@@ -61,7 +71,7 @@ export default function DashboardPage(props: DashboardPageProps) {
             ))}
           </div>
         )}
-        {tab === "windows" && (
+        {windowsMixerEnabled && tab === "windows" && (
           <div className="windows-mixer">
             <label className="mixer-output">
               <span>Output</span>

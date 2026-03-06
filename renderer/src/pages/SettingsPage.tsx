@@ -403,6 +403,10 @@ export default function SettingsPage({
               <input type="checkbox" checked={settings.showBatteryPercent} onChange={(e) => onUpdate({ showBatteryPercent: e.currentTarget.checked })} />
             </label>
             <label className="form-row">
+              <span>Enable Windows Mixer tab</span>
+              <input type="checkbox" checked={settings.showWindowsMixer !== false} onChange={(e) => onUpdate({ showWindowsMixer: e.currentTarget.checked })} />
+            </label>
+            <label className="form-row">
               <span>Toggle shortcut</span>
               <input
                 className="text-input"

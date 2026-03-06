@@ -4103,24 +4103,24 @@ function applyFlyoutSizeFromSettings(): void {
   }
 }
 
-function fitFlyoutToContent(width: number, height: number): void {
+function fitFlyoutToContent(width: number, _height: number): void {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return;
   }
   const limits = resolveFlyoutFitLimits();
   const nextWidth = clampNumber(Math.round(width), FLYOUT_MIN_WIDTH, limits.maxWidth);
-  const nextHeight = clampNumber(Math.round(height), FLYOUT_MIN_HEIGHT, limits.maxHeight);
+  // Keep flyout height fixed to configured value; content-fit only adjusts width.
+  const nextHeight = clampNumber(Number(settings.flyoutHeight) || 520, FLYOUT_MIN_HEIGHT, limits.maxHeight);
   const [currentWidth, currentHeight] = mainWindow.getContentSize();
   if (currentWidth === nextWidth && currentHeight === nextHeight) {
     return;
   }
   mainWindow.setContentSize(nextWidth, nextHeight, false);
   positionBottomRight(mainWindow, resolveUiDisplay());
-  if (settings.flyoutWidth !== nextWidth || settings.flyoutHeight !== nextHeight) {
+  if (settings.flyoutWidth !== nextWidth) {
     settings = mergeSettings({
       ...settings,
       flyoutWidth: nextWidth,
-      flyoutHeight: nextHeight,
     });
     schedulePersist();
   }

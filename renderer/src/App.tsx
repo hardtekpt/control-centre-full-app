@@ -269,6 +269,7 @@ function LiveApp({ windowMode }: { windowMode: "dashboard" | "settings" }) {
         state={state}
         presets={presets}
         visibleChannels={visibleChannels}
+        windowsMixerEnabled={resolvedSettings.showWindowsMixer !== false}
         mixerData={mixerData}
         onSetVolume={actions.setChannelVolume}
         onSetMute={actions.setChannelMute}

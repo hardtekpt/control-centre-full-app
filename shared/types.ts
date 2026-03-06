@@ -50,6 +50,7 @@ export interface UiSettings {
   useActiveDisplay: boolean;
   pcUsbInput: 1 | 2;
   showBatteryPercent: boolean;
+  showWindowsMixer: boolean;
   notificationTimeout: number;
   batteryLowThreshold: number;
   flyoutWidth: number;

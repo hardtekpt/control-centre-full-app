@@ -102,12 +102,10 @@
   grid-template-rows: auto auto;
   gap: 8px;
   flex: 0 0 auto;
-  width: 100%;
-  max-width: 100%;
+  width: auto;
   height: auto;
   align-content: start;
   align-items: start;
-  justify-items: stretch;
   min-width: 0;
   min-height: 0;
 }
@@ -311,10 +309,11 @@
   flex-direction: column;
   min-height: auto;
   margin-bottom: 0;
-  width: 100%;
+  width: fit-content;
   max-width: 100%;
   gap: 8px;
   grid-column: 1 / -1;
+  align-self: start;
   overflow: visible;
 }
 
@@ -371,7 +370,7 @@
   gap: 4px;
   padding: 6px 4px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(0255, 255, 255, 0.06);
   flex: 0 0 auto;
   min-width: 0;
   max-width: none;
@@ -379,18 +378,19 @@
 
 .app-mixer-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(110px, 1.4fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) minmax(74px, 1fr) auto auto;
   grid-template-rows: auto;
-  gap: 6px;
+  gap: 4px;
   width: 100%;
   min-width: 0;
+  justify-items: stretch;
   align-items: center;
-  padding: 5px 8px;
+  padding: 4px 6px;
 }
 
 .app-inline-label {
   min-width: 0;
-  font-size: 0.8em;
+  font-size: 0.78em;
   font-weight: 600;
   letter-spacing: 0.01em;
   text-transform: none;
@@ -465,20 +465,20 @@
 
 .app-inline-slider {
   width: 100%;
-  min-width: 130px;
+  min-width: 74px;
   max-width: none;
 }
 
 .app-inline-value {
-  font-size: 0.8em;
+  font-size: 0.76em;
   opacity: 0.9;
-  min-width: 36px;
+  min-width: 30px;
   text-align: right;
 }
 
 .app-inline-mute {
-  width: 1.55em;
-  height: 1.55em;
+  width: 1.45em;
+  height: 1.45em;
   padding: 0;
 }
 
@@ -509,10 +509,11 @@
 .mixer-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   width: 100%;
   min-width: 0;
   max-height: 300px;
+  max-width: 350px;
   overflow-y: auto;
   overflow-x: hidden;
   padding-right: 2px;
