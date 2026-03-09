@@ -153,8 +153,22 @@ export default function App() {
 }
 
 function LiveApp({ windowMode }: { windowMode: "dashboard" | "settings" }) {
-  const { state, presets, settings, status, error, logs, mixerData, ddcMonitors, ddcMonitorsUpdatedAt, ddcError, flyoutPinned, serviceStatus, actions } =
-    useBridgeState();
+  const {
+    state,
+    presets,
+    settings,
+    openApps,
+    status,
+    error,
+    logs,
+    mixerData,
+    ddcMonitors,
+    ddcMonitorsUpdatedAt,
+    ddcError,
+    flyoutPinned,
+    serviceStatus,
+    actions,
+  } = useBridgeState();
   const resolvedSettings = settings ?? DEFAULT_SETTINGS;
   const visibleChannels = settings?.visibleChannels ?? [];
   const lastReportedSizeRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 });
@@ -208,6 +222,7 @@ function LiveApp({ windowMode }: { windowMode: "dashboard" | "settings" }) {
           presets={presets}
           ddcMonitors={ddcMonitors}
           ddcMonitorsUpdatedAt={ddcMonitorsUpdatedAt}
+          openApps={openApps}
           ddcError={ddcError}
           logs={logs}
           lastStatus={status}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CHANNELS, type AppState, type PresetMap, type UiSettings } from "@shared/types";
+import { CHANNELS, type AppState, type PresetMap, type RunningAppInfo, type UiSettings } from "@shared/types";
 import { mergeState } from "@shared/settings";
 
 export interface MixerApp {
@@ -50,6 +50,7 @@ export function useBridgeState() {
   const [status, setStatus] = useState("ready");
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState({ isDark: true, accent: "#6ab7ff" });
+  const [openApps, setOpenApps] = useState<RunningAppInfo[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
   const [mixerData, setMixerData] = useState<MixerData>({ outputs: [], selectedOutputId: "default", apps: [] });
   const [ddcMonitors, setDdcMonitors] = useState<DdcMonitor[]>([]);
@@ -87,6 +88,7 @@ export function useBridgeState() {
       setState(mergeState(payload.state));
       setPresets(payload.presets ?? {});
       setSettingsState(payload.settings);
+      setOpenApps(Array.isArray(payload.openApps) ? payload.openApps : []);
       setTheme(payload.theme);
       setStatus(payload.status ?? "ready");
       setError(payload.error ?? null);
@@ -138,6 +140,9 @@ export function useBridgeState() {
     const offLog = window.arctisBridge.onLog((line) => {
       setLogs((prev) => [line, ...prev].slice(0, 200));
     });
+    const offOpenApps = window.arctisBridge.onOpenApps((apps) => {
+      setOpenApps(Array.isArray(apps) ? apps : []);
+    });
     const offDdc = window.arctisBridge.onDdcUpdate((monitors) => {
       setDdcMonitors(Array.isArray(monitors) ? monitors : []);
       setDdcMonitorsUpdatedAt(Date.now());
@@ -152,6 +157,7 @@ export function useBridgeState() {
       offTheme();
       offSettings();
       offLog();
+      offOpenApps();
       offDdc();
     };
   }, [windowMode]);
@@ -326,6 +332,7 @@ export function useBridgeState() {
     ddcMonitorsUpdatedAt,
     ddcError,
     flyoutPinned,
+    openApps,
     serviceStatus,
     actions,
     theme,

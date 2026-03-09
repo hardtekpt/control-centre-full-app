@@ -1,10 +1,11 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { AppState, BackendCommand, PresetMap, UiSettings } from "@shared/types";
+import type { AppState, BackendCommand, PresetMap, RunningAppInfo, UiSettings } from "@shared/types";
 
 interface InitialPayload {
   state: AppState;
   presets: PresetMap;
   settings: UiSettings;
+  openApps: RunningAppInfo[];
   theme: { isDark: boolean; accent: string };
   status: string;
   error: string | null;
@@ -106,6 +107,11 @@ const api = {
     const fn = (_: unknown, payload: DdcMonitorPayload[]) => cb(payload);
     ipcRenderer.on("ddc:update", fn);
     return () => ipcRenderer.removeListener("ddc:update", fn);
+  },
+  onOpenApps: (cb: (apps: RunningAppInfo[]) => void): (() => void) => {
+    const fn = (_: unknown, payload: RunningAppInfo[]) => cb(payload);
+    ipcRenderer.on("open-apps:update", fn);
+    return () => ipcRenderer.removeListener("open-apps:update", fn);
   },
 };
 

@@ -1001,6 +1001,10 @@ select option {
   max-width: none;
 }
 
+.preset-rule-row {
+  align-items: center;
+}
+
 select.shortcut-field {
   width: auto;
   max-width: none;

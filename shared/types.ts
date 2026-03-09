@@ -59,6 +59,7 @@ export interface UiSettings {
   shortcuts: ShortcutBinding[];
   visibleChannels: ChannelKey[];
   notifications: Record<NotificationKey, boolean>;
+  automaticPresetRules: AutomaticPresetRule[];
   ddc: {
     apiBaseUrl: string;
     pollIntervalMs: number;
@@ -106,6 +107,21 @@ export interface ShortcutBinding {
   monitorId?: number;
   brightness?: number;
   inputSource?: string;
+}
+
+export interface AutomaticPresetRule {
+  id: string;
+  enabled: boolean;
+  appId: string;
+  channel: ChannelKey;
+  presetId: string;
+}
+
+export interface RunningAppInfo {
+  id: string;
+  name: string;
+  title: string;
+  executable: string;
 }
 
 export interface BackendCommand {

@@ -6,10 +6,23 @@ import { execFile } from "node:child_process";
 import { ArctisApiService } from "./services/apis/arctis/service";
 import { DdcApiService } from "./services/apis/ddc/service";
 import { ShortcutService } from "./services/shortcuts/service";
+import * as PresetSwitcherServiceModule from "./services/presetSwitcher/service";
+import type {
+  PresetSwitcherServiceConfig,
+  PresetSwitcherService as PresetSwitcherServiceType,
+} from "./services/presetSwitcher/service";
 import { createFlyoutWindow, positionBottomRight, saveWindowBounds } from "./window";
 import { buildTrayIcon, createTray } from "./tray";
 import { DEFAULT_SETTINGS, mergeSettings, mergeState } from "../shared/settings.js";
-import { CHANNELS, type AppState, type BackendCommand, type ChannelKey, type PresetMap, type ShortcutBinding, type UiSettings } from "../shared/types";
+import {
+  CHANNELS,
+  type AppState,
+  type BackendCommand,
+  type ChannelKey,
+  type PresetMap,
+  type ShortcutBinding,
+  type UiSettings,
+} from "../shared/types";
 
 let mainWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
@@ -68,6 +81,13 @@ interface BaseBatteryStatusNotificationPayload {
 interface HeadsetBatterySwapNotificationPayload {
   headsetBattery: number | null;
 }
+type PresetSwitcherServiceCtor = new (
+  config: PresetSwitcherServiceConfig,
+) => PresetSwitcherServiceType;
+type PresetSwitcherModuleShape = {
+  PresetSwitcherService?: PresetSwitcherServiceCtor;
+  default?: PresetSwitcherServiceCtor;
+};
 type OsdLayout = { displayId: number; x: number; y: number; width: number; height: number; uiScale: number };
 let headsetVolumeOsdLayout: OsdLayout | null = null;
 let micMuteOsdLayout: OsdLayout | null = null;
@@ -87,6 +107,58 @@ let cachedPresets: PresetMap = {};
 let backend: ArctisApiService | null = null;
 let ddcService: DdcApiService | null = null;
 const shortcutService = new ShortcutService();
+const PresetSwitcherServiceCtor =
+  (PresetSwitcherServiceModule as PresetSwitcherModuleShape).PresetSwitcherService ??
+  (PresetSwitcherServiceModule as PresetSwitcherModuleShape).default;
+
+if (typeof PresetSwitcherServiceCtor !== "function") {
+  throw new Error("PresetSwitcherService module did not provide a constructable export.");
+}
+
+const presetSwitcherService = new (PresetSwitcherServiceCtor as new (config: PresetSwitcherServiceConfig) => PresetSwitcherServiceType)({
+  getCurrentPreset: (channel) => {
+    const current = cachedState.channel_preset?.[channel as keyof NonNullable<AppState["channel_preset"]>];
+    return typeof current === "string" ? current : null;
+  },
+  getPresetMap: () => cachedPresets,
+  applyPreset: (channel, presetId) => {
+    if (!backend) {
+      return;
+    }
+    backend.send({
+      name: "set_preset",
+      payload: {
+        channel,
+        preset_id: presetId,
+      },
+    });
+    cachedState = mergeState({
+      ...cachedState,
+      channel_preset: {
+        ...cachedState.channel_preset,
+        [channel]: presetId,
+      },
+    });
+    if (isNotifEnabled("presetChange")) {
+      void showPresetChangeNotification(channel, getPresetDisplayName(channel, presetId));
+    }
+    schedulePersist();
+    broadcastStateUpdate();
+  },
+  onAppsUpdate: (apps) => {
+    for (const win of allWindows()) {
+      win.webContents.send("open-apps:update", apps);
+    }
+  },
+  onActiveAppUpdate: (activeApp) => {
+    if (activeApp) {
+      pushLog(`Automatic preset switcher active app: ${activeApp.name}`);
+    }
+  },
+  onLog: (message) => {
+    pushLog(`AutomaticPresetSwitcher: ${message}`);
+  },
+});
 let lastStatusText = "ready";
 let lastErrorText: string | null = null;
 let logBuffer: string[] = [];
@@ -4508,6 +4580,7 @@ function wireIpc(): void {
       state: cachedState,
       presets: cachedPresets,
       settings,
+      openApps: presetSwitcherService.getState().apps,
       theme: await getThemePayload(),
       status: lastStatusText,
       error: lastErrorText,
@@ -4577,6 +4650,9 @@ function wireIpc(): void {
         },
       },
     });
+    if (next.automaticPresetRules !== settings.automaticPresetRules) {
+      presetSwitcherService.setRules(next.automaticPresetRules);
+    }
     if (partial.ddc?.pollIntervalMs !== undefined && Number(partial.ddc?.pollIntervalMs) !== settings.ddc.pollIntervalMs) {
       restartDdcMonitorRefresh();
     } else if (partial.ddc) {
@@ -5031,6 +5107,8 @@ async function createApp(): Promise<void> {
   void backend.refreshNow();
   void warmupDdcCache();
   restartDdcMonitorRefresh(true);
+  presetSwitcherService.setRules(settings.automaticPresetRules);
+  presetSwitcherService.start();
 
   mainWindow = createFlyoutWindow(settings);
   mainWindow.on("close", (evt) => {
@@ -5119,6 +5197,7 @@ app.on("window-all-closed", () => {});
 app.on("before-quit", () => {
   isQuitting = true;
   stopDdcMonitorRefresh();
+  presetSwitcherService.stop();
   clearHeadsetVolumeNotificationTimer();
   clearMicMuteNotificationTimer();
   clearOledNotificationTimer();

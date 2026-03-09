@@ -1,6 +1,7 @@
-import type { AppState, ChannelKey, ShortcutAction, ShortcutBinding, UiSettings } from "./types";
+import type { AppState, ChannelKey, ShortcutAction, ShortcutBinding, UiSettings, AutomaticPresetRule } from "./types";
 
 const DEFAULT_CHANNELS: ChannelKey[] = ["master", "game", "chatRender", "media", "aux", "chatCapture"];
+const DEFAULT_MAX_AUTOPRESET_RULES = 128;
 
 export const DEFAULT_STATE: AppState = {
   headset_battery_percent: null,
@@ -51,6 +52,7 @@ export const DEFAULT_SETTINGS: UiSettings = {
     appInfo: true,
     presetChange: true,
   },
+  automaticPresetRules: [],
   ddc: {
     apiBaseUrl: "http://127.0.0.1:59321",
     pollIntervalMs: 300000,
@@ -106,6 +108,7 @@ export function mergeSettings(partial?: Partial<UiSettings>): UiSettings {
   const visibleChannels =
     partialSanitized.visibleChannels?.filter((channel): channel is ChannelKey => DEFAULT_CHANNELS.includes(channel)) ??
     DEFAULT_SETTINGS.visibleChannels;
+  const automaticPresetRules = sanitizeAutomaticPresetRules(partialSanitized.automaticPresetRules);
   const dashboardMonitorIdRaw = Number(partialSanitized.ddc?.dashboardMonitorId);
   const dashboardMonitorId =
     Number.isFinite(dashboardMonitorIdRaw) && dashboardMonitorIdRaw > 0 ? Math.round(dashboardMonitorIdRaw) : null;
@@ -142,6 +145,7 @@ export function mergeSettings(partial?: Partial<UiSettings>): UiSettings {
     flyoutHeight: clamp((partialSanitized.flyoutHeight ?? DEFAULT_SETTINGS.flyoutHeight), 260, 1200),
     shortcuts: sanitizeShortcuts(partialSanitized.shortcuts),
     visibleChannels,
+    automaticPresetRules,
     notifications: {
       ...DEFAULT_SETTINGS.notifications,
       ...notificationsWithLegacy,
@@ -258,4 +262,40 @@ function sanitizeShortcutId(value: unknown, index: number): string {
     return raw;
   }
   return `shortcut-${index + 1}`;
+}
+
+function sanitizePresetRuleId(value: unknown, index: number): string {
+  const raw = String(value ?? "").trim().slice(0, 120);
+  if (raw) {
+    return raw;
+  }
+  return `automatic-preset-${index + 1}`;
+}
+
+function sanitizeAutomaticPresetRules(value: unknown): AutomaticPresetRule[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const out: AutomaticPresetRule[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const item = value[index];
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const row = item as Record<string, unknown>;
+    const appId = String(row.appId ?? row.app_id ?? "").trim();
+    const channel = sanitizeShortcutChannel(row.channel);
+    const presetId = String(row.presetId ?? row.preset_id ?? "").trim();
+    if (!appId || !channel || !presetId) {
+      continue;
+    }
+    out.push({
+      id: sanitizePresetRuleId(row.id, index),
+      enabled: row.enabled !== false,
+      appId,
+      channel,
+      presetId,
+    });
+  }
+  return out.slice(0, DEFAULT_MAX_AUTOPRESET_RULES);
 }

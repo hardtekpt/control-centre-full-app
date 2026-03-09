@@ -1,5 +1,5 @@
 import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { CHANNELS, type ChannelKey, type NotificationKey, type PresetMap, type ShortcutAction, type ShortcutBinding, type UiSettings } from "@shared/types";
+import { CHANNELS, type ChannelKey, type NotificationKey, type PresetMap, type RunningAppInfo, type ShortcutAction, type ShortcutBinding, type UiSettings } from "@shared/types";
 import type { DdcMonitor, ServiceStatus } from "../state/store";
 
 interface SettingsProps {
@@ -18,6 +18,7 @@ interface SettingsProps {
   onTestNotification: () => void;
   onTestLowBatteryNotification: () => void;
   onTestBatterySwapNotification: () => void;
+  openApps: RunningAppInfo[];
 }
 
 const NOTIFICATION_LABELS: Array<{ key: NotificationKey; label: string }> = [
@@ -47,7 +48,7 @@ const SHORTCUT_ACTION_OPTIONS: Array<{ value: ShortcutAction; label: string }> =
   { value: "ddc_input_set", label: "Monitor Input Set" },
 ];
 
-type SettingsTab = "app" | "ggSonar" | "shortcuts" | "notifications" | "ddc" | "about";
+type SettingsTab = "app" | "ggSonar" | "shortcuts" | "notifications" | "ddc" | "autoPreset" | "about";
 
 function normalizeInputCode(value: string | null | undefined): string {
   return String(value ?? "")
@@ -150,13 +151,43 @@ export default function SettingsPage({
   onTestNotification,
   onTestLowBatteryNotification,
   onTestBatterySwapNotification,
+  openApps,
 }: SettingsProps) {
   const [tab, setTab] = useState<SettingsTab>(initialTab);
   const [shortcutDraft, setShortcutDraft] = useState(settings.toggleShortcut);
   const [newShortcut, setNewShortcut] = useState<ShortcutBinding>(defaultShortcutBinding);
+  const [newPresetRule, setNewPresetRule] = useState({ enabled: true, appId: "", channel: "master" as ChannelKey, presetId: "" });
 
+  const sortedOpenApps = [...openApps]
+    .filter((item) => String(item.id ?? "").trim())
+    .sort((a, b) => {
+      const aName = String(a.name || a.id).toLowerCase();
+      const bName = String(b.name || b.id).toLowerCase();
+      return aName.localeCompare(bName);
+    });
+  const appLabel = (app: RunningAppInfo): string => {
+    const name = String(app.name || app.id).trim();
+    const executable = String(app.executable || app.id).trim();
+    return executable && executable !== name ? `${name} (${executable})` : name;
+  };
+  const isKnownApp = (appId: string) => sortedOpenApps.some((app) => app.id === appId);
+  const appSelectLabel = (appId: string): string => {
+    const app = sortedOpenApps.find((item) => item.id === appId);
+    if (app) {
+      return appLabel(app);
+    }
+    return appId;
+  };
   useEffect(() => setShortcutDraft(settings.toggleShortcut), [settings.toggleShortcut]);
   useEffect(() => setTab(initialTab), [initialTab]);
+  useEffect(() => {
+    setNewPresetRule((prev) => {
+      if (prev.appId && sortedOpenApps.some((app) => app.id === prev.appId)) {
+        return prev;
+      }
+      return { ...prev, appId: sortedOpenApps[0]?.id ?? "", presetId: "" };
+    });
+  }, [sortedOpenApps]);
   const dashboardMonitorIdRaw = Number(settings.ddc.dashboardMonitorId);
   const dashboardMonitorId = Number.isFinite(dashboardMonitorIdRaw) && dashboardMonitorIdRaw > 0 ? Math.round(dashboardMonitorIdRaw) : null;
   const dashboardSecondaryMonitorIdRaw = Number(settings.ddc.dashboardSecondaryMonitorId);
@@ -468,6 +499,31 @@ export default function SettingsPage({
     setNewShortcut(defaultShortcutBinding());
   };
 
+  const availablePresetRows = (channel: ChannelKey): Array<[string, string]> => presets[channel] ?? [];
+  const updateAutomaticPresetRules = (next: typeof settings.automaticPresetRules) => {
+    onUpdate({ automaticPresetRules: next });
+  };
+  const patchAutomaticPresetRule = (id: string, patch: Partial<(typeof settings.automaticPresetRules)[number]>) => {
+    const next = settings.automaticPresetRules.map((rule) => (rule.id === id ? { ...rule, ...patch } : rule));
+    updateAutomaticPresetRules(next);
+  };
+  const removeAutomaticPresetRule = (id: string) => {
+    updateAutomaticPresetRules(settings.automaticPresetRules.filter((rule) => rule.id !== id));
+  };
+  const addAutomaticPresetRule = () => {
+    if (!newPresetRule.appId || !newPresetRule.presetId) {
+      return;
+    }
+    const next = [...settings.automaticPresetRules, { ...newPresetRule, id: createShortcutId() }];
+    updateAutomaticPresetRules(next);
+    setNewPresetRule({
+      enabled: true,
+      appId: sortedOpenApps[0]?.id ?? "",
+      channel: newPresetRule.channel,
+      presetId: "",
+    });
+  };
+
   return (
     <section className="card settings-page settings-shell">
       <aside className="settings-sidebar">
@@ -480,6 +536,9 @@ export default function SettingsPage({
         </button>
         <button className={`settings-nav-btn ${tab === "shortcuts" ? "active" : ""}`} onClick={() => setTab("shortcuts")}>
           Shortcuts
+        </button>
+        <button className={`settings-nav-btn ${tab === "autoPreset" ? "active" : ""}`} onClick={() => setTab("autoPreset")}>
+          Automatic Presets
         </button>
         <button className={`settings-nav-btn ${tab === "notifications" ? "active" : ""}`} onClick={() => setTab("notifications")}>
           Notifications
@@ -619,6 +678,129 @@ export default function SettingsPage({
                 </button>
                 <button className="button" onClick={onTestBatterySwapNotification} style={{ marginLeft: "8px" }}>
                   Test Battery Swap Notification
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+        {tab === "autoPreset" && (
+          <>
+            <h3>Automatic Preset Switcher</h3>
+            <p className="hint">Choose an open app and associated Sonar preset per channel. Rules are applied when the active window changes.</p>
+            <div className="shortcut-list">
+              {settings.automaticPresetRules.length === 0 && <div className="hint">No automatic preset rules configured.</div>}
+              {settings.automaticPresetRules.map((rule) => {
+                const presetOptions = availablePresetRows(rule.channel);
+                return (
+                  <div className="shortcut-row preset-rule-row" key={rule.id}>
+                    <input
+                      type="checkbox"
+                      checked={rule.enabled !== false}
+                      onChange={(e) => patchAutomaticPresetRule(rule.id, { enabled: e.currentTarget.checked })}
+                      title="Enabled"
+                    />
+                    <select
+                      className="shortcut-field shortcut-field-channel"
+                      value={rule.appId}
+                      onChange={(e) => patchAutomaticPresetRule(rule.id, { appId: e.currentTarget.value })}
+                    >
+                      {!isKnownApp(rule.appId) && rule.appId && <option value={rule.appId}>{appSelectLabel(rule.appId)}</option>}
+                      {sortedOpenApps.length === 0 && (
+                        <option value="">No running apps detected</option>
+                      )}
+                      {sortedOpenApps.map((app) => (
+                        <option key={`${rule.id}-${app.id}`} value={app.id}>
+                          {appLabel(app)}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className="shortcut-field shortcut-field-channel"
+                      value={rule.channel}
+                      onChange={(e) => patchAutomaticPresetRule(rule.id, { channel: e.currentTarget.value as ChannelKey })}
+                    >
+                      {CHANNELS.map((channel) => (
+                        <option key={channel} value={channel}>
+                          {channel}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      className="shortcut-field shortcut-field-preset"
+                      value={rule.presetId}
+                      onChange={(e) => patchAutomaticPresetRule(rule.id, { presetId: e.currentTarget.value })}
+                    >
+                      <option value="">Select preset</option>
+                      {presetOptions.map(([id, label]) => (
+                        <option key={id} value={id}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                    <button className="button shortcut-delete" onClick={() => removeAutomaticPresetRule(rule.id)}>
+                      Remove
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="shortcut-add">
+              <h3>Add Rule</h3>
+              <div className="shortcut-row preset-rule-row">
+                <input
+                  type="checkbox"
+                  checked={newPresetRule.enabled}
+                  onChange={(e) => setNewPresetRule((prev) => ({ ...prev, enabled: e.currentTarget.checked }))}
+                />
+                <select
+                  className="shortcut-field shortcut-field-channel"
+                  value={newPresetRule.appId}
+                  onChange={(e) => setNewPresetRule((prev) => ({ ...prev, appId: e.currentTarget.value }))}
+                >
+                  {!isKnownApp(newPresetRule.appId) && newPresetRule.appId && <option value={newPresetRule.appId}>{appSelectLabel(newPresetRule.appId)}</option>}
+                  {sortedOpenApps.length === 0 && (
+                    <option value="">No running apps detected</option>
+                  )}
+                  {sortedOpenApps.map((app) => (
+                    <option key={`new-${app.id}`} value={app.id}>
+                      {appLabel(app)}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="shortcut-field shortcut-field-channel"
+                  value={newPresetRule.channel}
+                  onChange={(e) =>
+                    setNewPresetRule((prev) => {
+                      const channel = e.currentTarget.value as ChannelKey;
+                      return {
+                        ...prev,
+                        channel,
+                        presetId: "",
+                      };
+                    })
+                  }
+                >
+                  {CHANNELS.map((channel) => (
+                    <option key={channel} value={channel}>
+                      {channel}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="shortcut-field shortcut-field-preset"
+                  value={newPresetRule.presetId}
+                  onChange={(e) => setNewPresetRule((prev) => ({ ...prev, presetId: e.currentTarget.value }))}
+                >
+                  <option value="">Select preset</option>
+                  {(availablePresetRows(newPresetRule.channel) ?? []).map(([id, label]) => (
+                    <option key={id} value={id}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+                <button className="button shortcut-add-btn" onClick={addAutomaticPresetRule}>
+                  Add
                 </button>
               </div>
             </div>

@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import type { AppState, BackendCommand, PresetMap, UiSettings } from "@shared/types";
+import type { AppState, BackendCommand, PresetMap, RunningAppInfo, UiSettings } from "@shared/types";
 
 declare global {
   interface Window {
@@ -9,6 +9,7 @@ declare global {
         state: AppState;
         presets: PresetMap;
         settings: UiSettings;
+        openApps: RunningAppInfo[];
         theme: { isDark: boolean; accent: string };
         status: string;
         error: string | null;
@@ -121,6 +122,7 @@ declare global {
       onTheme: (cb: (payload: { isDark: boolean; accent: string }) => void) => () => void;
       onSettings: (cb: (payload: UiSettings) => void) => () => void;
       onLog: (cb: (line: string) => void) => () => void;
+      onOpenApps: (cb: (apps: RunningAppInfo[]) => void) => () => void;
       onDdcUpdate: (
         cb: (monitors: Array<{
           monitor_id: number;
