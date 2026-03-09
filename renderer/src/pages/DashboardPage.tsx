@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { CHANNELS, type AppState, type ChannelKey, type PresetMap } from "@shared/types";
+import { CHANNELS, type AppState, type ChannelKey, type PresetMap, type UiSettings } from "@shared/types";
 import ChannelRow from "../components/ChannelRow";
 import StatusCard from "../components/StatusCard";
 import AppMixerRow from "../components/AppMixerRow";
-import type { MixerData } from "../state/store";
+import type { DdcMonitor, MixerData } from "../state/store";
+import MonitorControlsCard from "../components/MonitorControlsCard";
 
 interface DashboardPageProps {
   state: AppState;
@@ -11,13 +12,18 @@ interface DashboardPageProps {
   visibleChannels: ChannelKey[];
   windowsMixerEnabled: boolean;
   mixerData: MixerData;
+  ddcMonitors: DdcMonitor[];
+  ddcSettings: UiSettings["ddc"];
   onSetVolume: (channel: string, value: number) => void;
+  onVolumePreview: (channel: string, value: number) => void;
   onSetMute: (channel: string, value: boolean) => void;
   onSetPreset: (channel: string, presetId: string) => void;
   onRefreshMixer: () => void;
   onSetMixerOutput: (outputId: string) => void;
   onSetMixerAppVolume: (appId: string, value: number) => void;
   onSetMixerAppMute: (appId: string, muted: boolean) => void;
+  onSetDdcBrightness: (monitorId: number, value: number) => void;
+  onSetDdcInputSource: (monitorId: number, value: string) => void;
 }
 
 export default function DashboardPage(props: DashboardPageProps) {
@@ -39,7 +45,15 @@ export default function DashboardPage(props: DashboardPageProps) {
 
   return (
     <div className="dashboard-page">
-      <StatusCard state={props.state} />
+      <div className="dashboard-main-row">
+        <StatusCard state={props.state} />
+        <MonitorControlsCard
+          ddcMonitors={props.ddcMonitors}
+          ddcSettings={props.ddcSettings}
+          onSetBrightness={props.onSetDdcBrightness}
+          onSetInputSource={props.onSetDdcInputSource}
+        />
+      </div>
       <section className="card channels">
         <div className="channels-topbar">
           <div className="tab-selector">
@@ -65,6 +79,7 @@ export default function DashboardPage(props: DashboardPageProps) {
                 presets={props.presets[channel] ?? []}
                 apps={props.state.channel_apps[channel] ?? []}
                 onVolumeCommit={(value) => props.onSetVolume(channel, value)}
+                onVolumePreview={(rowChannel, value: number) => props.onVolumePreview(rowChannel, value)}
                 onMuteChange={(value) => props.onSetMute(channel, value)}
                 onPresetChange={(presetId) => props.onSetPreset(channel, presetId)}
               />

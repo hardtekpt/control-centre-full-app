@@ -94,6 +94,8 @@ let mixerOutputId: string | null = null;
 let mixerAppVolume: Record<string, number> = {};
 let mixerAppMuted: Record<string, boolean> = {};
 let persistTimer: NodeJS.Timeout | null = null;
+let ddcMonitorRefreshTimer: NodeJS.Timeout | null = null;
+let ddcMonitorRefreshInFlight = false;
 let mainWindowLoaded = false;
 let pendingFlyoutOpen = false;
 let isQuitting = false;
@@ -424,7 +426,81 @@ async function stopManagedDdcApi(): Promise<void> {
 
 function sanitizePollIntervalMs(): number {
   const raw = Number(settings.ddc?.pollIntervalMs ?? 300000);
-  return Math.max(10000, Math.min(1_800_000, raw));
+  const rawMinutesMode = raw <= 120 ? raw * 60_000 : raw;
+  return Math.max(60_000, Math.min(1_800_000, rawMinutesMode));
+}
+
+function sanitizeOpenStaleThresholdMs(): number {
+  const raw = Number(settings.ddc?.openStaleThresholdMs ?? 60_000);
+  const rawMinutesMode = raw <= 120 ? raw * 60_000 : raw;
+  return Math.max(60_000, Math.min(3_600_000, rawMinutesMode));
+}
+
+function refreshDdcMonitorsOnOpen(): void {
+  const thresholdMs = sanitizeOpenStaleThresholdMs();
+  const now = Date.now();
+  const isStale = ddcMonitorsCache.length === 0 || now - ddcMonitorsCacheTs > thresholdMs;
+  if (!isStale || ddcMonitorRefreshInFlight) {
+    return;
+  }
+  if (!ddcService) {
+    return;
+  }
+  ddcMonitorRefreshInFlight = true;
+  debugDdc("refreshDdcMonitorsOnOpen starting stale refresh");
+  void (async () => {
+    try {
+      await fetchDdcMonitorsIfStale(true);
+    } catch (err) {
+      debugDdc(`showFlyout DDC refresh failed: ${normalizeError(err)}`);
+    } finally {
+      ddcMonitorRefreshInFlight = false;
+    }
+  })();
+}
+
+function stopDdcMonitorRefresh(): void {
+  if (ddcMonitorRefreshTimer) {
+    clearInterval(ddcMonitorRefreshTimer);
+    ddcMonitorRefreshTimer = null;
+  }
+  ddcMonitorRefreshInFlight = false;
+}
+
+function restartDdcMonitorRefresh(forceNow = false): void {
+  stopDdcMonitorRefresh();
+  const intervalMs = sanitizePollIntervalMs();
+  if (intervalMs <= 0) {
+    return;
+  }
+  ddcMonitorRefreshTimer = setInterval(() => {
+    void (async () => {
+      if (ddcMonitorRefreshInFlight) {
+        return;
+      }
+      ddcMonitorRefreshInFlight = true;
+      try {
+        await fetchDdcMonitorsIfStale(true);
+        if (ddcLastStatus !== "ok") {
+          ddcLastStatus = "ok";
+          ddcLastFailure = "";
+          pushLog(`DDC monitor polling active (${Math.round(intervalMs / 60_000)} min).`);
+        }
+      } catch (err) {
+        const detail = normalizeError(err);
+        if (ddcLastFailure !== detail || ddcLastStatus !== "error") {
+          pushLog(`ERROR: DDC poll failed: ${detail}`);
+        }
+        ddcLastStatus = "error";
+        ddcLastFailure = detail;
+      } finally {
+        ddcMonitorRefreshInFlight = false;
+      }
+    })();
+  }, intervalMs);
+  if (forceNow) {
+    void fetchDdcMonitorsIfStale(true).catch(() => undefined);
+  }
 }
 
 async function fetchDdcMonitorsIfStale(force = false): Promise<DdcMonitor[]> {
@@ -3984,6 +4060,7 @@ function showFlyout(): void {
   hideIntentUntil = 0;
   lastHideReason = "";
   flyoutOpeningSince = Date.now();
+  refreshDdcMonitorsOnOpen();
   if (mainWindow.isMinimized()) {
     mainWindow.restore();
   }
@@ -4448,6 +4525,13 @@ function wireIpc(): void {
   });
   ipcMain.handle("services:get-status", async () => getServiceStatusPayload());
   ipcMain.on("backend:command", (_evt, cmd: BackendCommand) => backend!.send(cmd));
+  ipcMain.on("notification:headset-volume-preview", (_evt, payload: unknown) => {
+    const volume = toNullablePercent(typeof payload === "number" ? payload : Number(payload));
+    if (volume == null || !isNotifEnabled("headsetVolume")) {
+      return;
+    }
+    void showHeadsetVolumeNotification({ volume });
+  });
   ipcMain.on("window:open-settings", () => {
     void showSettingsWindow();
   });
@@ -4493,6 +4577,11 @@ function wireIpc(): void {
         },
       },
     });
+    if (partial.ddc?.pollIntervalMs !== undefined && Number(partial.ddc?.pollIntervalMs) !== settings.ddc.pollIntervalMs) {
+      restartDdcMonitorRefresh();
+    } else if (partial.ddc) {
+      restartDdcMonitorRefresh();
+    }
     registerConfiguredShortcuts();
     if (mainWindow && !mainWindow.isDestroyed()) {
       applyFlyoutSizeFromSettings();
@@ -4941,6 +5030,7 @@ async function createApp(): Promise<void> {
   wireBackend();
   void backend.refreshNow();
   void warmupDdcCache();
+  restartDdcMonitorRefresh(true);
 
   mainWindow = createFlyoutWindow(settings);
   mainWindow.on("close", (evt) => {
@@ -5028,6 +5118,7 @@ app.whenReady().then(createApp);
 app.on("window-all-closed", () => {});
 app.on("before-quit", () => {
   isQuitting = true;
+  stopDdcMonitorRefresh();
   clearHeadsetVolumeNotificationTimer();
   clearMicMuteNotificationTimer();
   clearOledNotificationTimer();

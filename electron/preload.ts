@@ -48,6 +48,7 @@ const api = {
   notifyCustom: (title: string, body: string): Promise<{ ok: boolean }> => ipcRenderer.invoke("app:notify-custom", { title, body }),
   notifyBatteryLowTest: (): Promise<{ ok: boolean }> => ipcRenderer.invoke("app:notify-battery-low-test"),
   notifyBatterySwapTest: (): Promise<{ ok: boolean }> => ipcRenderer.invoke("app:notify-battery-swap-test"),
+  notifyHeadsetVolumePreview: (value: number): void => ipcRenderer.send("notification:headset-volume-preview", value),
   getMixerData: (): Promise<MixerDataPayload> => ipcRenderer.invoke("mixer:get-data"),
   setMixerOutput: (outputId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke("mixer:set-output", outputId),
   setMixerAppVolume: (appId: string, volume: number): Promise<{ ok: boolean }> =>

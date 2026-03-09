@@ -271,13 +271,18 @@ function LiveApp({ windowMode }: { windowMode: "dashboard" | "settings" }) {
         visibleChannels={visibleChannels}
         windowsMixerEnabled={resolvedSettings.showWindowsMixer !== false}
         mixerData={mixerData}
+        ddcMonitors={ddcMonitors}
+        ddcSettings={resolvedSettings.ddc}
         onSetVolume={actions.setChannelVolume}
+        onVolumePreview={actions.previewHeadsetVolume}
         onSetMute={actions.setChannelMute}
         onSetPreset={actions.setPreset}
         onRefreshMixer={() => void actions.refreshMixer()}
         onSetMixerOutput={(outputId) => void actions.setMixerOutput(outputId)}
         onSetMixerAppVolume={(appId, value) => void actions.setMixerAppVolume(appId, value)}
         onSetMixerAppMute={(appId, muted) => void actions.setMixerAppMute(appId, muted)}
+        onSetDdcBrightness={(monitorId, value) => void actions.setDdcBrightness(monitorId, value)}
+        onSetDdcInputSource={(monitorId, value) => void actions.setDdcInputSource(monitorId, value)}
       />
     </main>
   );

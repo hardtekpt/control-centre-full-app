@@ -54,6 +54,16 @@ export const DEFAULT_SETTINGS: UiSettings = {
   ddc: {
     apiBaseUrl: "http://127.0.0.1:59321",
     pollIntervalMs: 300000,
+    openStaleThresholdMs: 60_000,
+    dashboardMonitorId: null,
+    dashboardSecondaryMonitorId: null,
+    dashboardPrimaryInputA: "",
+    dashboardPrimaryInputB: "",
+    dashboardSecondaryInputA: "",
+    dashboardSecondaryInputB: "",
+    inputNameMap: {},
+    dashboardInputA: "",
+    dashboardInputB: "",
     monitorPrefs: {},
   },
 };
@@ -96,6 +106,31 @@ export function mergeSettings(partial?: Partial<UiSettings>): UiSettings {
   const visibleChannels =
     partialSanitized.visibleChannels?.filter((channel): channel is ChannelKey => DEFAULT_CHANNELS.includes(channel)) ??
     DEFAULT_SETTINGS.visibleChannels;
+  const dashboardMonitorIdRaw = Number(partialSanitized.ddc?.dashboardMonitorId);
+  const dashboardMonitorId =
+    Number.isFinite(dashboardMonitorIdRaw) && dashboardMonitorIdRaw > 0 ? Math.round(dashboardMonitorIdRaw) : null;
+  const dashboardSecondaryMonitorIdRaw = Number(partialSanitized.ddc?.dashboardSecondaryMonitorId);
+  const dashboardSecondaryMonitorId =
+    Number.isFinite(dashboardSecondaryMonitorIdRaw) && dashboardSecondaryMonitorIdRaw > 0
+      ? Math.round(dashboardSecondaryMonitorIdRaw)
+      : null;
+  const legacyDashboardInputA = String(partialSanitized.ddc?.dashboardInputA ?? DEFAULT_SETTINGS.ddc.dashboardInputA).trim();
+  const legacyDashboardInputB = String(partialSanitized.ddc?.dashboardInputB ?? DEFAULT_SETTINGS.ddc.dashboardInputB).trim();
+  const dashboardPrimaryInputA = String(partialSanitized.ddc?.dashboardPrimaryInputA ?? legacyDashboardInputA).trim();
+  const dashboardPrimaryInputB = String(partialSanitized.ddc?.dashboardPrimaryInputB ?? legacyDashboardInputB).trim();
+  const dashboardSecondaryInputA = String(partialSanitized.ddc?.dashboardSecondaryInputA ?? dashboardPrimaryInputA).trim();
+  const dashboardSecondaryInputB = String(partialSanitized.ddc?.dashboardSecondaryInputB ?? dashboardPrimaryInputB).trim();
+  const rawInputNameMap = partialSanitized.ddc?.inputNameMap;
+  const inputNameMap: Record<string, string> = {};
+  if (rawInputNameMap && typeof rawInputNameMap === "object") {
+    for (const [rawKey, rawValue] of Object.entries(rawInputNameMap as Record<string, unknown>)) {
+      const key = String(rawKey ?? "").trim();
+      if (!key) {
+        continue;
+      }
+      inputNameMap[key] = String(rawValue ?? "").trim();
+    }
+  }
   return {
     ...DEFAULT_SETTINGS,
     ...partialSanitized,
@@ -115,7 +150,21 @@ export function mergeSettings(partial?: Partial<UiSettings>): UiSettings {
       ...DEFAULT_SETTINGS.ddc,
       ...(partialSanitized.ddc ?? {}),
       apiBaseUrl: String(partialSanitized.ddc?.apiBaseUrl ?? DEFAULT_SETTINGS.ddc.apiBaseUrl).trim() || DEFAULT_SETTINGS.ddc.apiBaseUrl,
-      pollIntervalMs: clamp(partialSanitized.ddc?.pollIntervalMs ?? DEFAULT_SETTINGS.ddc.pollIntervalMs, 10000, 1800000),
+      pollIntervalMs: clamp(Number(partialSanitized.ddc?.pollIntervalMs ?? DEFAULT_SETTINGS.ddc.pollIntervalMs), 60_000, 1800000),
+      openStaleThresholdMs: clamp(
+        Number(partialSanitized.ddc?.openStaleThresholdMs ?? DEFAULT_SETTINGS.ddc.openStaleThresholdMs),
+        60_000,
+        3_600_000,
+      ),
+      dashboardMonitorId,
+      dashboardSecondaryMonitorId: dashboardSecondaryMonitorId !== dashboardMonitorId ? dashboardSecondaryMonitorId : null,
+      dashboardPrimaryInputA,
+      dashboardPrimaryInputB,
+      dashboardSecondaryInputA,
+      dashboardSecondaryInputB,
+      inputNameMap,
+      dashboardInputA: legacyDashboardInputA,
+      dashboardInputB: legacyDashboardInputB,
       monitorPrefs: { ...DEFAULT_SETTINGS.ddc.monitorPrefs, ...(partialSanitized.ddc?.monitorPrefs ?? {}) },
     },
   };

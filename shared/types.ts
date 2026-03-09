@@ -62,6 +62,17 @@ export interface UiSettings {
   ddc: {
     apiBaseUrl: string;
     pollIntervalMs: number;
+    openStaleThresholdMs: number;
+    dashboardMonitorId: number | null;
+    dashboardSecondaryMonitorId: number | null;
+    dashboardPrimaryInputA: string;
+    dashboardPrimaryInputB: string;
+    dashboardSecondaryInputA: string;
+    dashboardSecondaryInputB: string;
+    inputNameMap: Record<string, string>;
+    // Legacy single-toggle fields (kept for compatibility with older settings).
+    dashboardInputA: string;
+    dashboardInputB: string;
     monitorPrefs: Record<
       string,
       {

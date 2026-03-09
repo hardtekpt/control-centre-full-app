@@ -1,5 +1,9 @@
 import { type WheelEvent, useEffect, useMemo, useRef, useState } from "react";
 
+function clampPercent(value: number): number {
+  return Math.max(0, Math.min(100, Math.floor(Number(value) || 0)));
+}
+
 interface ChannelRowProps {
   channel: string;
   volume: number;
@@ -8,6 +12,7 @@ interface ChannelRowProps {
   presets: Array<[string, string]>;
   apps: string[];
   onVolumeCommit: (value: number) => void;
+  onVolumePreview?: (channel: string, value: number) => void;
   onMuteChange: (value: boolean) => void;
   onPresetChange: (presetId: string) => void;
 }
@@ -32,9 +37,14 @@ function VolumeIcon({ muted }: { muted: boolean }) {
 export default function ChannelRow(props: ChannelRowProps) {
   const [draftVolume, setDraftVolume] = useState(props.volume);
   const wheelCommitTimer = useRef<number | null>(null);
+  const volumePreviewTimer = useRef<number | null>(null);
+  const lastPreviewVolume = useRef<number | null>(null);
   const selectRef = useRef<HTMLSelectElement | null>(null);
   const pendingWheelVolume = useRef<number>(props.volume);
   useEffect(() => setDraftVolume(props.volume), [props.volume]);
+  useEffect(() => {
+    lastPreviewVolume.current = null;
+  }, [props.volume]);
   useEffect(() => {
     pendingWheelVolume.current = props.volume;
   }, [props.volume]);
@@ -42,6 +52,9 @@ export default function ChannelRow(props: ChannelRowProps) {
     () => () => {
       if (wheelCommitTimer.current !== null) {
         window.clearTimeout(wheelCommitTimer.current);
+      }
+      if (volumePreviewTimer.current !== null) {
+        window.clearTimeout(volumePreviewTimer.current);
       }
     },
     [],
@@ -51,6 +64,27 @@ export default function ChannelRow(props: ChannelRowProps) {
     () => ({ height: `${Math.max(0, Math.min(100, draftVolume))}%` }),
     [draftVolume],
   );
+
+  const scheduleVolumePreview = (value: number) => {
+    const next = clampPercent(value);
+    if (volumePreviewTimer.current !== null) {
+      window.clearTimeout(volumePreviewTimer.current);
+    }
+    volumePreviewTimer.current = window.setTimeout(() => {
+      volumePreviewTimer.current = null;
+      if (lastPreviewVolume.current === next) {
+        return;
+      }
+      lastPreviewVolume.current = next;
+      props.onVolumePreview?.(props.channel, next);
+    }, 25);
+  };
+
+  const onRangeChange = (value: number) => {
+    const next = clampPercent(value);
+    setDraftVolume(next);
+    scheduleVolumePreview(next);
+  };
 
   const commitVolume = () => {
     const next = Math.max(0, Math.min(100, draftVolume));
@@ -63,6 +97,7 @@ export default function ChannelRow(props: ChannelRowProps) {
     setDraftVolume((prev) => {
       const next = Math.max(0, Math.min(100, prev + delta));
       pendingWheelVolume.current = next;
+      scheduleVolumePreview(next);
       return next;
     });
     if (wheelCommitTimer.current !== null) {
@@ -129,7 +164,7 @@ export default function ChannelRow(props: ChannelRowProps) {
           min={0}
           max={100}
           value={draftVolume}
-          onChange={(e) => setDraftVolume(Number(e.currentTarget.value))}
+          onChange={(e) => onRangeChange(Number(e.currentTarget.value))}
           onMouseUp={commitVolume}
           onTouchEnd={commitVolume}
           onKeyUp={commitVolume}

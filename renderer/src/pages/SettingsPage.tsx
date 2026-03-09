@@ -49,6 +49,12 @@ const SHORTCUT_ACTION_OPTIONS: Array<{ value: ShortcutAction; label: string }> =
 
 type SettingsTab = "app" | "ggSonar" | "shortcuts" | "notifications" | "ddc" | "about";
 
+function normalizeInputCode(value: string | null | undefined): string {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+}
+
 function createShortcutId(): string {
   return `shortcut-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -151,6 +157,122 @@ export default function SettingsPage({
 
   useEffect(() => setShortcutDraft(settings.toggleShortcut), [settings.toggleShortcut]);
   useEffect(() => setTab(initialTab), [initialTab]);
+  const dashboardMonitorIdRaw = Number(settings.ddc.dashboardMonitorId);
+  const dashboardMonitorId = Number.isFinite(dashboardMonitorIdRaw) && dashboardMonitorIdRaw > 0 ? Math.round(dashboardMonitorIdRaw) : null;
+  const dashboardSecondaryMonitorIdRaw = Number(settings.ddc.dashboardSecondaryMonitorId);
+  const dashboardSecondaryMonitorId =
+    Number.isFinite(dashboardSecondaryMonitorIdRaw) && dashboardSecondaryMonitorIdRaw > 0 ? Math.round(dashboardSecondaryMonitorIdRaw) : null;
+  const selectedPrimaryMonitor = ddcMonitors.find((item) => item.monitor_id === dashboardMonitorId) ?? ddcMonitors[0] ?? null;
+  const selectedSecondaryMonitor =
+    ddcMonitors.find((item) => item.monitor_id === dashboardSecondaryMonitorId) ??
+    ddcMonitors.find((item) => item.monitor_id !== (selectedPrimaryMonitor?.monitor_id ?? -1)) ??
+    null;
+  const resolveInputName = (inputCode: string): string => {
+    const target = normalizeInputCode(inputCode);
+    if (!target) {
+      return "";
+    }
+    for (const [key, value] of Object.entries(settings.ddc.inputNameMap ?? {})) {
+      if (normalizeInputCode(key) === target) {
+        return String(value ?? "").trim();
+      }
+    }
+    return "";
+  };
+  const inputLabel = (inputCode: string): string => {
+    const trimmed = String(inputCode ?? "").trim();
+    if (!trimmed) {
+      return "";
+    }
+    const name = resolveInputName(trimmed);
+    return name ? `${name} (${trimmed})` : trimmed;
+  };
+  const dedupeInputCodes = (values: string[]): string[] => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const raw of values) {
+      const code = String(raw ?? "").trim();
+      if (!code) {
+        continue;
+      }
+      const key = normalizeInputCode(code);
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      out.push(code);
+    }
+    return out;
+  };
+  const knownInputCodes = dedupeInputCodes([
+    ...(selectedPrimaryMonitor?.available_inputs ?? []),
+    ...(selectedSecondaryMonitor?.available_inputs ?? []),
+    ...Object.keys(settings.ddc.inputNameMap ?? {}),
+  ]);
+  const primaryInputOptions = dedupeInputCodes([
+    ...(selectedPrimaryMonitor?.available_inputs ?? []),
+    settings.ddc.dashboardPrimaryInputA,
+    settings.ddc.dashboardPrimaryInputB,
+    ...knownInputCodes,
+  ]);
+  const secondaryInputOptions = dedupeInputCodes([
+    ...(selectedSecondaryMonitor?.available_inputs ?? []),
+    settings.ddc.dashboardSecondaryInputA,
+    settings.ddc.dashboardSecondaryInputB,
+    ...knownInputCodes,
+  ]);
+  const monitorDisplayName = (monitor: DdcMonitor): string => {
+    const alias = String(settings.ddc.monitorPrefs[String(monitor.monitor_id)]?.alias ?? "").trim();
+    return alias || monitor.name;
+  };
+  const monitorAliasValue = (monitorId: number | null): string => {
+    if (!monitorId) {
+      return "";
+    }
+    return String(settings.ddc.monitorPrefs[String(monitorId)]?.alias ?? "");
+  };
+  const setMonitorAlias = (monitorId: number | null, alias: string) => {
+    if (!monitorId) {
+      return;
+    }
+    const key = String(monitorId);
+    const current = settings.ddc.monitorPrefs[key] ?? { alias: "", enabled: true };
+    onUpdate({
+      ddc: {
+        ...settings.ddc,
+        monitorPrefs: {
+          ...settings.ddc.monitorPrefs,
+          [key]: {
+            ...current,
+            alias,
+            enabled: current.enabled !== false,
+          },
+        },
+      },
+    });
+  };
+  const setInputName = (inputCode: string, value: string) => {
+    const code = String(inputCode ?? "").trim();
+    if (!code) {
+      return;
+    }
+    const nextMap = { ...(settings.ddc.inputNameMap ?? {}) };
+    if (value.trim()) {
+      nextMap[code] = value;
+    } else {
+      for (const key of Object.keys(nextMap)) {
+        if (normalizeInputCode(key) === normalizeInputCode(code)) {
+          delete nextMap[key];
+        }
+      }
+    }
+    onUpdate({
+      ddc: {
+        ...settings.ddc,
+        inputNameMap: nextMap,
+      },
+    });
+  };
 
   const toggleChannel = (channel: ChannelKey, enabled: boolean) => {
     const next = enabled
@@ -326,7 +448,7 @@ export default function SettingsPage({
               <option value="">Select input</option>
               {(monitor?.available_inputs ?? []).map((input) => (
                 <option key={input} value={input}>
-                  {input}
+                  {inputLabel(input)}
                 </option>
               ))}
             </select>
@@ -574,6 +696,211 @@ export default function SettingsPage({
         {tab === "ddc" && (
           <>
             <h3>DDC Monitor Data</h3>
+            <label className="form-row">
+              <span>DDC poll interval (minutes)</span>
+              <div className="accent-row">
+                <input
+                  className="text-input"
+                  type="number"
+                  min={1}
+                  max={30}
+                  step={1}
+                  value={Math.max(1, Math.round(settings.ddc.pollIntervalMs / 60000))}
+                  onChange={(e) =>
+                    onUpdate({
+                      ddc: {
+                        ...settings.ddc,
+                        pollIntervalMs: Math.max(1, Math.round(Number(e.currentTarget.value) || 5)) * 60_000,
+                      },
+                    })
+                  }
+                />
+                <span>min</span>
+              </div>
+            </label>
+            <label className="form-row">
+              <span>Refresh monitors when stale (minutes)</span>
+              <div className="accent-row">
+                <input
+                  className="text-input"
+                  type="number"
+                  min={1}
+                  max={60}
+                  step={1}
+                  value={Math.max(1, Math.round((settings.ddc.openStaleThresholdMs ?? 60_000) / 60_000))}
+                  onChange={(e) =>
+                    onUpdate({
+                      ddc: {
+                        ...settings.ddc,
+                        openStaleThresholdMs: Math.max(1, Math.round(Number(e.currentTarget.value) || 1)) * 60_000,
+                      },
+                    })
+                  }
+                />
+                <span>min</span>
+              </div>
+            </label>
+            <label className="form-row">
+              <span>Dashboard monitor</span>
+              <select
+                value={dashboardMonitorId ?? ""}
+                onChange={(e) =>
+                  onUpdate({
+                    ddc: {
+                      ...settings.ddc,
+                      dashboardMonitorId: Number(e.currentTarget.value) || null,
+                    },
+                  })
+                }
+              >
+                <option value="">Auto (first monitor)</option>
+                {ddcMonitors.map((item) => (
+                  <option key={item.monitor_id} value={item.monitor_id}>
+                    {monitorDisplayName(item)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="form-row">
+              <span>Primary monitor name</span>
+              <input
+                className="text-input"
+                value={monitorAliasValue(selectedPrimaryMonitor?.monitor_id ?? null)}
+                onChange={(e) => setMonitorAlias(selectedPrimaryMonitor?.monitor_id ?? null, e.currentTarget.value)}
+                placeholder={selectedPrimaryMonitor?.name ?? "Primary monitor"}
+              />
+            </label>
+            <label className="form-row">
+              <span>Dashboard monitor (secondary)</span>
+              <select
+                value={dashboardSecondaryMonitorId ?? ""}
+                onChange={(e) =>
+                  onUpdate({
+                    ddc: {
+                      ...settings.ddc,
+                      dashboardSecondaryMonitorId: Number(e.currentTarget.value) || null,
+                    },
+                  })
+                }
+              >
+                <option value="">Auto (second monitor)</option>
+                {ddcMonitors.map((item) => (
+                  <option key={`secondary-${item.monitor_id}`} value={item.monitor_id}>
+                    {monitorDisplayName(item)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="form-row">
+              <span>Secondary monitor name</span>
+              <input
+                className="text-input"
+                value={monitorAliasValue(selectedSecondaryMonitor?.monitor_id ?? null)}
+                onChange={(e) => setMonitorAlias(selectedSecondaryMonitor?.monitor_id ?? null, e.currentTarget.value)}
+                placeholder={selectedSecondaryMonitor?.name ?? "Secondary monitor"}
+              />
+            </label>
+            <label className="form-row">
+              <span>Primary input toggle A</span>
+              <select
+                value={settings.ddc.dashboardPrimaryInputA}
+                onChange={(e) =>
+                  onUpdate({
+                    ddc: {
+                      ...settings.ddc,
+                      dashboardPrimaryInputA: e.currentTarget.value,
+                    },
+                  })
+                }
+              >
+                <option value="">Auto (first input)</option>
+                {primaryInputOptions.map((input) => (
+                  <option key={`ddc-a-${input}`} value={input}>
+                    {inputLabel(input)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="form-row">
+              <span>Primary input toggle B</span>
+              <select
+                value={settings.ddc.dashboardPrimaryInputB}
+                onChange={(e) =>
+                  onUpdate({
+                    ddc: {
+                      ...settings.ddc,
+                      dashboardPrimaryInputB: e.currentTarget.value,
+                    },
+                  })
+                }
+              >
+                <option value="">Auto (second input)</option>
+                {primaryInputOptions.map((input) => (
+                  <option key={`ddc-b-${input}`} value={input}>
+                    {inputLabel(input)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="form-row">
+              <span>Secondary input toggle A</span>
+              <select
+                value={settings.ddc.dashboardSecondaryInputA}
+                onChange={(e) =>
+                  onUpdate({
+                    ddc: {
+                      ...settings.ddc,
+                      dashboardSecondaryInputA: e.currentTarget.value,
+                    },
+                  })
+                }
+              >
+                <option value="">Auto (first input)</option>
+                {secondaryInputOptions.map((input) => (
+                  <option key={`ddc-secondary-a-${input}`} value={input}>
+                    {inputLabel(input)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="form-row">
+              <span>Secondary input toggle B</span>
+              <select
+                value={settings.ddc.dashboardSecondaryInputB}
+                onChange={(e) =>
+                  onUpdate({
+                    ddc: {
+                      ...settings.ddc,
+                      dashboardSecondaryInputB: e.currentTarget.value,
+                    },
+                  })
+                }
+              >
+                <option value="">Auto (second input)</option>
+                {secondaryInputOptions.map((input) => (
+                  <option key={`ddc-secondary-b-${input}`} value={input}>
+                    {inputLabel(input)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="visible-channels">
+              <div className="visible-title">Input names by hex code</div>
+              <div className="visible-grid">
+                {knownInputCodes.map((inputCode) => (
+                  <label key={`input-name-${inputCode}`} className="form-row">
+                    <span>{inputCode}</span>
+                    <input
+                      className="text-input"
+                      value={resolveInputName(inputCode)}
+                      onChange={(e) => setInputName(inputCode, e.currentTarget.value)}
+                      placeholder="Custom input name"
+                    />
+                  </label>
+                ))}
+                {knownInputCodes.length === 0 && <div className="hint">No monitor input codes available yet.</div>}
+              </div>
+            </div>
             <div className="ddc-json-meta">
               <span>Last updated:</span>
               <span>{ddcMonitorsUpdatedAt ? new Date(ddcMonitorsUpdatedAt).toLocaleString() : "Never"}</span>

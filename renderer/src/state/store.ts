@@ -15,6 +15,11 @@ export interface MixerData {
   apps: MixerApp[];
 }
 
+function clampPercent(value: number): number {
+  const numeric = Number(value);
+  return Math.max(0, Math.min(100, Math.floor(Number.isFinite(numeric) ? numeric : 0)));
+}
+
 export interface DdcMonitor {
   monitor_id: number;
   name: string;
@@ -60,6 +65,13 @@ export function useBridgeState() {
   const lockedUntilRef = useRef<Record<string, number>>({});
   const addLog = (text: string) =>
     setLogs((prev) => [`${new Date().toLocaleTimeString()}  ${text}`, ...prev].slice(0, 200));
+  const upsertDdcMonitor = (nextMonitor: DdcMonitor) => {
+    setDdcMonitors((prev) => {
+      const next = [...prev.filter((item) => item.monitor_id !== nextMonitor.monitor_id), nextMonitor].sort((a, b) => a.monitor_id - b.monitor_id);
+      return next;
+    });
+    setDdcMonitorsUpdatedAt(Date.now());
+  };
   const windowMode = useMemo(() => {
     const mode = new URLSearchParams(window.location.search).get("window");
     if (mode === "settings") {
@@ -126,6 +138,11 @@ export function useBridgeState() {
     const offLog = window.arctisBridge.onLog((line) => {
       setLogs((prev) => [line, ...prev].slice(0, 200));
     });
+    const offDdc = window.arctisBridge.onDdcUpdate((monitors) => {
+      setDdcMonitors(Array.isArray(monitors) ? monitors : []);
+      setDdcMonitorsUpdatedAt(Date.now());
+      setDdcError(null);
+    });
     return () => {
       disposed = true;
       offState();
@@ -135,6 +152,7 @@ export function useBridgeState() {
       offTheme();
       offSettings();
       offLog();
+      offDdc();
     };
   }, [windowMode]);
 
@@ -194,6 +212,12 @@ export function useBridgeState() {
           name: "set_channel_volume",
           payload: { channel, value },
         });
+      },
+      previewHeadsetVolume: (channel: string, value: number) => {
+        if (channel !== "master") {
+          return;
+        }
+        window.arctisBridge.notifyHeadsetVolumePreview(clampPercent(value));
       },
       setChannelMute: (channel: string, value: boolean) => {
         lockChannel(channel, 1000);
@@ -265,6 +289,24 @@ export function useBridgeState() {
           apps: prev.apps.map((app) => (app.id === appId ? { ...app, muted } : app)),
         }));
         await window.arctisBridge.setMixerAppMute(appId, muted);
+      },
+      setDdcBrightness: async (monitorId: number, value: number) => {
+        const result = await window.arctisBridge.setDdcBrightness(monitorId, value);
+        if (result.ok && result.monitor) {
+          upsertDdcMonitor(result.monitor);
+          setDdcError(null);
+          return;
+        }
+        setDdcError(result.error ?? "Unable to set monitor brightness.");
+      },
+      setDdcInputSource: async (monitorId: number, value: string) => {
+        const result = await window.arctisBridge.setDdcInputSource(monitorId, value);
+        if (result.ok && result.monitor) {
+          upsertDdcMonitor(result.monitor);
+          setDdcError(null);
+          return;
+        }
+        setDdcError(result.error ?? "Unable to set monitor input source.");
       },
       persistSettings,
     }),

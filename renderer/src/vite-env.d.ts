@@ -48,6 +48,7 @@ declare global {
       }>;
       openGG: () => Promise<{ ok: boolean; detail: string }>;
       notifyCustom: (title: string, body: string) => Promise<{ ok: boolean }>;
+      notifyHeadsetVolumePreview: (value: number) => void;
       notifyBatteryLowTest: () => Promise<{ ok: boolean }>;
       notifyBatterySwapTest: () => Promise<{ ok: boolean }>;
       getMixerData: () => Promise<{
