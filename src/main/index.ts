@@ -6,6 +6,9 @@ import { execFile } from "node:child_process";
 import { ArctisApiService } from "./services/apis/arctis/service";
 import { DdcApiService } from "./services/apis/ddc/service";
 import { ShortcutService } from "./services/shortcuts/service";
+import { createPersistenceService, type PersistedAppState } from "./services/persistence/service";
+import { createNotificationTimerService, type NotificationTimerKey } from "./services/notifications/timerService";
+import { createNotificationWindowService } from "./services/notifications/windowService";
 import {
   PresetSwitcherService as PresetSwitcherServiceImpl,
   PresetSwitcherServiceConfig,
@@ -37,43 +40,30 @@ import { createWindowIpcHandlers } from "./ipc/windowHandlers";
 
 let mainWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
-let notificationWindows: BrowserWindow[] = [];
 let headsetVolumeNotificationWindow: BrowserWindow | null = null;
-let headsetVolumeNotificationTimer: NodeJS.Timeout | null = null;
 let headsetVolumePendingValue: number | null = null;
 let headsetChatMixPendingValue: number | null = null;
 let micMuteNotificationWindow: BrowserWindow | null = null;
-let micMuteNotificationTimer: NodeJS.Timeout | null = null;
 let micMutePendingValue: boolean | null = null;
 let oledNotificationWindow: BrowserWindow | null = null;
-let oledNotificationTimer: NodeJS.Timeout | null = null;
 let oledPendingValue: number | null = null;
 let sidetoneNotificationWindow: BrowserWindow | null = null;
-let sidetoneNotificationTimer: NodeJS.Timeout | null = null;
 let sidetonePendingValue: number | null = null;
 let presetChangeNotificationWindow: BrowserWindow | null = null;
-let presetChangeNotificationTimer: NodeJS.Timeout | null = null;
 let presetChangePendingValue: { channel: ChannelKey; presetName: string } | null = null;
 let usbInputNotificationWindow: BrowserWindow | null = null;
-let usbInputNotificationTimer: NodeJS.Timeout | null = null;
 let usbInputPendingValue: 1 | 2 | null = null;
 let ancModeNotificationWindow: BrowserWindow | null = null;
-let ancModeNotificationTimer: NodeJS.Timeout | null = null;
 let ancModePendingValue: AncNotificationMode | null = null;
 let connectivityNotificationWindow: BrowserWindow | null = null;
-let connectivityNotificationTimer: NodeJS.Timeout | null = null;
 let connectivityPendingValue: ConnectivityNotificationPayload | null = null;
 let connectivityNotificationHideAt = 0;
 let batteryLowNotificationWindow: BrowserWindow | null = null;
-let batteryLowNotificationTimer: NodeJS.Timeout | null = null;
 let batteryLowPendingValue: BatteryLowNotificationPayload | null = null;
 let baseBatteryStatusNotificationWindow: BrowserWindow | null = null;
-let baseBatteryStatusNotificationTimer: NodeJS.Timeout | null = null;
 let baseBatteryStatusPendingValue: BaseBatteryStatusNotificationPayload | null = null;
 let headsetBatterySwapNotificationWindow: BrowserWindow | null = null;
-let headsetBatterySwapNotificationTimer: NodeJS.Timeout | null = null;
 let headsetBatterySwapPendingValue: HeadsetBatterySwapNotificationPayload | null = null;
-let headsetBatterySwapDelayTimer: NodeJS.Timeout | null = null;
 type AncNotificationMode = "off" | "anc" | "transparency";
 interface ConnectivityNotificationPayload {
   connected: boolean;
@@ -164,7 +154,6 @@ let logBuffer: string[] = [];
 let mixerOutputId: string | null = null;
 let mixerAppVolume: Record<string, number> = {};
 let mixerAppMuted: Record<string, boolean> = {};
-let persistTimer: NodeJS.Timeout | null = null;
 let ddcMonitorRefreshTimer: NodeJS.Timeout | null = null;
 let ddcMonitorRefreshInFlight = false;
 let mainWindowLoaded = false;
@@ -230,21 +219,19 @@ if (!app.isPackaged) {
   app.setPath("sessionData", devSessionPath);
 }
 
-interface PersistedAppState {
-  version: number;
-  state: AppState;
-  presets: PresetMap;
-  settings: UiSettings;
-  statusText: string;
-  errorText: string | null;
-  logs: string[];
-  mixerOutputId: string | null;
-  mixerAppVolume: Record<string, number>;
-  mixerAppMuted: Record<string, boolean>;
-  ddcMonitorsCache: DdcMonitor[];
-  ddcMonitorsCacheTs: number;
-  flyoutPinned: boolean;
-}
+const persistenceService = createPersistenceService({
+  getUserDataPath: () => app.getPath("userData"),
+  snapshotFileName: "app-state.json",
+  persistDelayMs: 80,
+});
+const notificationTimerService = createNotificationTimerService();
+const notificationWindowService = createNotificationWindowService({
+  getThemePayload: () => getThemePayload(),
+  resolveDisplay: () => resolveUiDisplay(),
+  getThemeMode: () => settings.themeMode,
+  getAccentColor: () => settings.accentColor,
+  getTimeoutSeconds: () => settings.notificationTimeout,
+});
 
 interface MixerOutput {
   id: string;
@@ -260,32 +247,11 @@ interface MixerApp {
 
 type DdcMonitor = DdcMonitorPayload;
 
-function getUserFile(name: string): string {
-  return path.join(app.getPath("userData"), name);
-}
-
-function readJsonFile<T>(filePath: string, fallback: T): T {
-  try {
-    const raw = fs.readFileSync(filePath, "utf-8");
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeJsonFile(filePath: string, value: unknown): void {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const tempPath = `${filePath}.tmp`;
-  fs.writeFileSync(tempPath, JSON.stringify(value, null, 2), "utf-8");
-  fs.renameSync(tempPath, filePath);
-}
-
-function getPersistedStateFile(): string {
-  return getUserFile("app-state.json");
-}
-
-function persistNow(): void {
-  const snapshot: PersistedAppState = {
+/**
+ * Builds the full persisted snapshot payload from current in-memory state.
+ */
+function buildPersistedSnapshot(): PersistedAppState {
+  return {
     version: APP_STATE_VERSION,
     state: cachedState,
     presets: cachedPresets,
@@ -300,19 +266,25 @@ function persistNow(): void {
     ddcMonitorsCacheTs,
     flyoutPinned,
   };
-  writeJsonFile(getPersistedStateFile(), snapshot);
 }
 
+/**
+ * Persists the current snapshot immediately.
+ */
+function persistNow(): void {
+  persistenceService.persistNow(buildPersistedSnapshot());
+}
+
+/**
+ * Debounces persistence so bursty state updates do not cause excessive disk writes.
+ */
 function schedulePersist(): void {
-  if (persistTimer) {
-    clearTimeout(persistTimer);
-  }
-  persistTimer = setTimeout(() => {
-    persistTimer = null;
-    persistNow();
-  }, 80);
+  persistenceService.schedulePersist(() => buildPersistedSnapshot());
 }
 
+/**
+ * Loads the persisted snapshot into all in-memory caches.
+ */
 function loadPersistedSnapshot(): void {
   const fallback: PersistedAppState = {
     version: APP_STATE_VERSION,
@@ -329,7 +301,7 @@ function loadPersistedSnapshot(): void {
     ddcMonitorsCacheTs: 0,
     flyoutPinned: false,
   };
-  const loaded = readJsonFile<PersistedAppState>(getPersistedStateFile(), fallback);
+  const loaded = persistenceService.loadSnapshot(fallback);
   cachedState = mergeState(loaded.state);
   cachedPresets = loaded.presets ?? {};
   settings = mergeSettings(loaded.settings);
@@ -348,6 +320,9 @@ function loadPersistedSnapshot(): void {
   flyoutPinned = Boolean(loaded.flyoutPinned);
 }
 
+/**
+ * Broadcasts current DDC cache data to all renderer windows and schedules persistence.
+ */
 function broadcastDdcUpdate(): void {
   schedulePersist();
   for (const win of allWindows()) {
@@ -357,6 +332,9 @@ function broadcastDdcUpdate(): void {
   }
 }
 
+/**
+ * Adds a timestamped log entry and forwards it to open renderer windows.
+ */
 function pushLog(text: string): void {
   const line = `${new Date().toLocaleTimeString()}  ${text}`;
   logBuffer = [line, ...logBuffer].slice(0, 200);
@@ -578,207 +556,123 @@ function isHeadsetChatMixEnabled(): boolean {
 }
 
 function showSystemNotification(title: string, body: string): void {
-  if (!title.trim() && !body.trim()) {
-    return;
-  }
-  void showNotificationWindow(title, body);
+  void notificationWindowService.showNotification(title, body);
 }
 
+function scheduleNotificationClose(timerKey: NotificationTimerKey, win: BrowserWindow, timeoutMs: number): void {
+  notificationTimerService.schedule(timerKey, timeoutMs, () => {
+    if (!win.isDestroyed()) {
+      win.close();
+    }
+  });
+}
+
+/**
+ * Notification timer clear helpers.
+ * These keep call sites explicit about which UI surface is being controlled.
+ */
 function clearHeadsetVolumeNotificationTimer(): void {
-  if (headsetVolumeNotificationTimer) {
-    clearTimeout(headsetVolumeNotificationTimer);
-    headsetVolumeNotificationTimer = null;
-  }
+  notificationTimerService.clear("headsetVolume");
 }
 
 function clearMicMuteNotificationTimer(): void {
-  if (micMuteNotificationTimer) {
-    clearTimeout(micMuteNotificationTimer);
-    micMuteNotificationTimer = null;
-  }
+  notificationTimerService.clear("micMute");
 }
 
 function clearOledNotificationTimer(): void {
-  if (oledNotificationTimer) {
-    clearTimeout(oledNotificationTimer);
-    oledNotificationTimer = null;
-  }
+  notificationTimerService.clear("oled");
 }
 
 function clearSidetoneNotificationTimer(): void {
-  if (sidetoneNotificationTimer) {
-    clearTimeout(sidetoneNotificationTimer);
-    sidetoneNotificationTimer = null;
-  }
+  notificationTimerService.clear("sidetone");
 }
 
 function clearPresetChangeNotificationTimer(): void {
-  if (presetChangeNotificationTimer) {
-    clearTimeout(presetChangeNotificationTimer);
-    presetChangeNotificationTimer = null;
-  }
+  notificationTimerService.clear("presetChange");
 }
 
 function clearUsbInputNotificationTimer(): void {
-  if (usbInputNotificationTimer) {
-    clearTimeout(usbInputNotificationTimer);
-    usbInputNotificationTimer = null;
-  }
+  notificationTimerService.clear("usbInput");
 }
 
 function clearAncModeNotificationTimer(): void {
-  if (ancModeNotificationTimer) {
-    clearTimeout(ancModeNotificationTimer);
-    ancModeNotificationTimer = null;
-  }
+  notificationTimerService.clear("ancMode");
 }
 
 function clearConnectivityNotificationTimer(): void {
-  if (connectivityNotificationTimer) {
-    clearTimeout(connectivityNotificationTimer);
-    connectivityNotificationTimer = null;
-  }
+  notificationTimerService.clear("connectivity");
   connectivityNotificationHideAt = 0;
 }
 
 function clearBatteryLowNotificationTimer(): void {
-  if (batteryLowNotificationTimer) {
-    clearTimeout(batteryLowNotificationTimer);
-    batteryLowNotificationTimer = null;
-  }
+  notificationTimerService.clear("batteryLow");
 }
 
 function clearBaseBatteryStatusNotificationTimer(): void {
-  if (baseBatteryStatusNotificationTimer) {
-    clearTimeout(baseBatteryStatusNotificationTimer);
-    baseBatteryStatusNotificationTimer = null;
-  }
+  notificationTimerService.clear("baseBatteryStatus");
 }
 
 function clearHeadsetBatterySwapNotificationTimer(): void {
-  if (headsetBatterySwapNotificationTimer) {
-    clearTimeout(headsetBatterySwapNotificationTimer);
-    headsetBatterySwapNotificationTimer = null;
-  }
+  notificationTimerService.clear("headsetBatterySwap");
 }
 
 function clearHeadsetBatterySwapDelayTimer(): void {
-  if (headsetBatterySwapDelayTimer) {
-    clearTimeout(headsetBatterySwapDelayTimer);
-    headsetBatterySwapDelayTimer = null;
-  }
+  notificationTimerService.clear("headsetBatterySwapDelay");
 }
 
+/**
+ * Notification close scheduling helpers.
+ * All notifications except connectivity use the user-configured timeout.
+ */
 function scheduleHeadsetVolumeNotificationClose(win: BrowserWindow): void {
-  clearHeadsetVolumeNotificationTimer();
-  headsetVolumeNotificationTimer = setTimeout(() => {
-    headsetVolumeNotificationTimer = null;
-    if (!win.isDestroyed()) {
-      win.close();
-    }
-  }, Math.max(2, settings.notificationTimeout) * 1000);
+  scheduleNotificationClose("headsetVolume", win, Math.max(2, settings.notificationTimeout) * 1000);
 }
 
 function scheduleMicMuteNotificationClose(win: BrowserWindow): void {
-  clearMicMuteNotificationTimer();
-  micMuteNotificationTimer = setTimeout(() => {
-    micMuteNotificationTimer = null;
-    if (!win.isDestroyed()) {
-      win.close();
-    }
-  }, Math.max(2, settings.notificationTimeout) * 1000);
+  scheduleNotificationClose("micMute", win, Math.max(2, settings.notificationTimeout) * 1000);
 }
 
 function scheduleOledNotificationClose(win: BrowserWindow): void {
-  clearOledNotificationTimer();
-  oledNotificationTimer = setTimeout(() => {
-    oledNotificationTimer = null;
-    if (!win.isDestroyed()) {
-      win.close();
-    }
-  }, Math.max(2, settings.notificationTimeout) * 1000);
+  scheduleNotificationClose("oled", win, Math.max(2, settings.notificationTimeout) * 1000);
 }
 
 function scheduleSidetoneNotificationClose(win: BrowserWindow): void {
-  clearSidetoneNotificationTimer();
-  sidetoneNotificationTimer = setTimeout(() => {
-    sidetoneNotificationTimer = null;
-    if (!win.isDestroyed()) {
-      win.close();
-    }
-  }, Math.max(2, settings.notificationTimeout) * 1000);
+  scheduleNotificationClose("sidetone", win, Math.max(2, settings.notificationTimeout) * 1000);
 }
 
 function schedulePresetChangeNotificationClose(win: BrowserWindow): void {
-  clearPresetChangeNotificationTimer();
-  presetChangeNotificationTimer = setTimeout(() => {
-    presetChangeNotificationTimer = null;
-    if (!win.isDestroyed()) {
-      win.close();
-    }
-  }, Math.max(2, settings.notificationTimeout) * 1000);
+  scheduleNotificationClose("presetChange", win, Math.max(2, settings.notificationTimeout) * 1000);
 }
 
 function scheduleUsbInputNotificationClose(win: BrowserWindow): void {
-  clearUsbInputNotificationTimer();
-  usbInputNotificationTimer = setTimeout(() => {
-    usbInputNotificationTimer = null;
-    if (!win.isDestroyed()) {
-      win.close();
-    }
-  }, Math.max(2, settings.notificationTimeout) * 1000);
+  scheduleNotificationClose("usbInput", win, Math.max(2, settings.notificationTimeout) * 1000);
 }
 
 function scheduleAncModeNotificationClose(win: BrowserWindow): void {
-  clearAncModeNotificationTimer();
-  ancModeNotificationTimer = setTimeout(() => {
-    ancModeNotificationTimer = null;
-    if (!win.isDestroyed()) {
-      win.close();
-    }
-  }, Math.max(2, settings.notificationTimeout) * 1000);
+  scheduleNotificationClose("ancMode", win, Math.max(2, settings.notificationTimeout) * 1000);
 }
 
 function scheduleConnectivityNotificationClose(win: BrowserWindow): void {
   clearConnectivityNotificationTimer();
   connectivityNotificationHideAt = Date.now() + CONNECTIVITY_OSD_TIMEOUT_MS;
-  connectivityNotificationTimer = setTimeout(() => {
-    connectivityNotificationTimer = null;
+  notificationTimerService.schedule("connectivity", CONNECTIVITY_OSD_TIMEOUT_MS, () => {
     connectivityNotificationHideAt = 0;
     if (!win.isDestroyed()) {
       win.close();
     }
-  }, CONNECTIVITY_OSD_TIMEOUT_MS);
+  });
 }
 
 function scheduleBatteryLowNotificationClose(win: BrowserWindow): void {
-  clearBatteryLowNotificationTimer();
-  batteryLowNotificationTimer = setTimeout(() => {
-    batteryLowNotificationTimer = null;
-    if (!win.isDestroyed()) {
-      win.close();
-    }
-  }, Math.max(2, settings.notificationTimeout) * 1000);
+  scheduleNotificationClose("batteryLow", win, Math.max(2, settings.notificationTimeout) * 1000);
 }
 
 function scheduleBaseBatteryStatusNotificationClose(win: BrowserWindow): void {
-  clearBaseBatteryStatusNotificationTimer();
-  baseBatteryStatusNotificationTimer = setTimeout(() => {
-    baseBatteryStatusNotificationTimer = null;
-    if (!win.isDestroyed()) {
-      win.close();
-    }
-  }, Math.max(2, settings.notificationTimeout) * 1000);
+  scheduleNotificationClose("baseBatteryStatus", win, Math.max(2, settings.notificationTimeout) * 1000);
 }
 
 function scheduleHeadsetBatterySwapNotificationClose(win: BrowserWindow): void {
-  clearHeadsetBatterySwapNotificationTimer();
-  headsetBatterySwapNotificationTimer = setTimeout(() => {
-    headsetBatterySwapNotificationTimer = null;
-    if (!win.isDestroyed()) {
-      win.close();
-    }
-  }, Math.max(2, settings.notificationTimeout) * 1000);
+  scheduleNotificationClose("headsetBatterySwap", win, Math.max(2, settings.notificationTimeout) * 1000);
 }
 
 function clampNumber(value: number, low: number, high: number): number {
@@ -3618,13 +3512,12 @@ function resetBatterySwapTrack(): void {
 function scheduleHeadsetBatterySwapNotification(payload: HeadsetBatterySwapNotificationPayload, delayMs: number): void {
   clearHeadsetBatterySwapDelayTimer();
   const wait = Math.max(0, Math.round(delayMs));
-  headsetBatterySwapDelayTimer = setTimeout(() => {
-    headsetBatterySwapDelayTimer = null;
+  notificationTimerService.schedule("headsetBatterySwapDelay", wait, () => {
     if (!isNotifEnabled("battery")) {
       return;
     }
     void showHeadsetBatterySwapNotification(payload);
-  }, wait);
+  });
 }
 
 function updateHeadsetBatterySwapNotificationScale(win: BrowserWindow, uiScale: number): void {
@@ -4037,21 +3930,18 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
 }
 
 function migrateLegacyState(): void {
-  if (fs.existsSync(getPersistedStateFile())) {
+  if (persistenceService.hasPersistedSnapshot()) {
     return;
   }
-  const oldStateCache = getUserFile("state-cache.json");
-  if (fs.existsSync(oldStateCache)) {
-    cachedState = mergeState(readJsonFile<Partial<AppState>>(oldStateCache, {}));
-  }
-  const oldSettings = getUserFile("settings.json");
-  if (fs.existsSync(oldSettings)) {
-    settings = mergeSettings(readJsonFile<Partial<UiSettings>>(oldSettings, {}));
-  }
+  cachedState = mergeState(persistenceService.readLegacyStateCache());
+  settings = mergeSettings(persistenceService.readLegacySettings());
   cachedState = applyUsbInputInference(cachedState);
   persistNow();
 }
 
+/**
+ * Reads Windows accent color from the registry.
+ */
 async function getWindowsAccentColor(): Promise<string> {
   if (process.platform !== "win32") {
     return "#6ab7ff";
@@ -4079,6 +3969,9 @@ async function getWindowsAccentColor(): Promise<string> {
   });
 }
 
+/**
+ * Returns theme payload consumed by renderer and OSD windows.
+ */
 async function getThemePayload(): Promise<{ isDark: boolean; accent: string }> {
   return {
     isDark: nativeTheme.shouldUseDarkColors,
@@ -4086,6 +3979,9 @@ async function getThemePayload(): Promise<{ isDark: boolean; accent: string }> {
   };
 }
 
+/**
+ * Displays the flyout window and refreshes stale monitor data if needed.
+ */
 function showFlyout(): void {
   if (!mainWindow) {
     debugFlyout("showFlyout ignored: no mainWindow");
@@ -4122,6 +4018,9 @@ function showFlyout(): void {
   flyoutOpeningSince = 0;
 }
 
+/**
+ * Hides the flyout window for explicit app-driven reasons only.
+ */
 function hideFlyout(reason = "unspecified"): void {
   if (!mainWindow) {
     debugFlyout("hideFlyout ignored: no mainWindow");
@@ -4139,6 +4038,9 @@ function hideFlyout(reason = "unspecified"): void {
   mainWindow.hide();
 }
 
+/**
+ * Toggles flyout visibility with debounce and stuck-open protection.
+ */
 function toggleFlyout(): void {
   if (!mainWindow) {
     debugFlyout("toggleFlyout ignored: no mainWindow");
@@ -4166,11 +4068,17 @@ function toggleFlyout(): void {
   }
 }
 
+/**
+ * Loads persisted settings and applies state-level normalization.
+ */
 function loadSettings(): void {
   loadPersistedSnapshot();
   cachedState = applyUsbInputInference(cachedState);
 }
 
+/**
+ * Persists new settings and returns the sanitized merged version.
+ */
 function persistSettings(next: UiSettings): UiSettings {
   settings = mergeSettings(next);
   schedulePersist();
@@ -4205,9 +4113,12 @@ function harmonizeLiveState(previous: AppState, incoming: AppState): AppState {
   };
 }
 
+/**
+ * Returns all currently alive application windows (dashboard, settings, notifications).
+ */
 function allWindows(): BrowserWindow[] {
   const wins: BrowserWindow[] = [];
-  for (const win of [mainWindow, settingsWindow, ...notificationWindows]) {
+  for (const win of [mainWindow, settingsWindow, ...notificationWindowService.getWindows()]) {
     if (win && !win.isDestroyed()) {
       wins.push(win);
     }
@@ -4249,20 +4160,6 @@ function fitFlyoutToContent(width: number, _height: number): void {
     });
     schedulePersist();
   }
-}
-
-function relayoutNotificationWindows(): void {
-  const display = resolveUiDisplay();
-  const workArea = display.workArea;
-  const margin = 12;
-  let y = workArea.y + margin;
-  for (const win of notificationWindows.filter((candidate) => !candidate.isDestroyed())) {
-    const bounds = win.getBounds();
-    const x = workArea.x + workArea.width - bounds.width - margin;
-    win.setPosition(x, y, false);
-    y += bounds.height + 10;
-  }
-  notificationWindows = notificationWindows.filter((candidate) => !candidate.isDestroyed());
 }
 
 function clampPercent(value: number): number {
@@ -4818,149 +4715,6 @@ async function ensureSettingsWindow(): Promise<BrowserWindow> {
   return settingsWindow;
 }
 
-async function showNotificationWindow(title: string, body: string): Promise<void> {
-  const theme = await getThemePayload();
-  const isDark = settings.themeMode === "system" ? theme.isDark : settings.themeMode === "dark";
-  const accent = settings.accentColor.trim() || theme.accent;
-  const shellBg = isDark ? "rgba(24,24,24,0.86)" : "rgba(248,248,248,0.92)";
-  const textColor = isDark ? "#ffffff" : "#111111";
-  const subText = isDark ? "rgba(255,255,255,0.78)" : "rgba(0,0,0,0.72)";
-  const borderColor = isDark ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.28)";
-  const cardBg = isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.45)";
-  const esc = (value: string) =>
-    String(value)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/\"/g, "&quot;");
-  const html = `<!doctype html>
-  <html>
-    <head>
-      <meta charset="utf-8" />
-      <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data:;" />
-      <style>
-        html, body {
-          margin: 0;
-          width: 100%;
-          height: 100%;
-          overflow: hidden;
-          background: transparent;
-          font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
-        }
-        body {
-          color: ${textColor};
-          padding: 0;
-        }
-        .shell {
-          margin: 0;
-          width: 100%;
-          height: 100%;
-          box-sizing: border-box;
-          border-radius: 12px;
-          background: ${shellBg};
-          border: 1px solid ${borderColor};
-          box-shadow: 0 10px 24px rgba(0,0,0,0.28), inset 0 0 0 0.5px ${borderColor};
-          display: grid;
-          grid-template-columns: auto 1fr;
-          gap: 10px;
-          align-items: start;
-          padding: 10px 12px;
-        }
-        .mark {
-          width: 30px;
-          height: 30px;
-          border-radius: 999px;
-          display: grid;
-          place-items: center;
-          background: color-mix(in srgb, ${accent} 24%, transparent);
-          color: ${accent};
-          font-size: 14px;
-          font-weight: 700;
-          box-shadow: inset 0 0 0 1px color-mix(in srgb, ${accent} 46%, transparent);
-        }
-        .copy {
-          min-width: 0;
-        }
-        .title {
-          font-size: 14px;
-          font-weight: 700;
-          line-height: 1.2;
-          margin-bottom: 4px;
-        }
-        .body {
-          font-size: 12px;
-          line-height: 1.35;
-          color: ${subText};
-          white-space: pre-wrap;
-          word-break: break-word;
-        }
-        .body-card {
-          background: ${cardBg};
-          border-radius: 8px;
-          padding: 8px 9px;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="shell">
-        <div class="mark">A</div>
-        <div class="copy">
-          <div class="title">${esc(title)}</div>
-          <div class="body-card">
-            <div class="body">${esc(body)}</div>
-          </div>
-        </div>
-      </div>
-    </body>
-  </html>`;
-  const win = new BrowserWindow({
-    width: 340,
-    height: 108,
-    show: false,
-    frame: false,
-    transparent: true,
-    backgroundColor: "#00000000",
-    resizable: false,
-    movable: false,
-    minimizable: false,
-    maximizable: false,
-    fullscreenable: false,
-    skipTaskbar: true,
-    alwaysOnTop: true,
-    focusable: true,
-    hasShadow: true,
-  });
-  await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
-  notificationWindows.push(win);
-  relayoutNotificationWindows();
-  win.setAlwaysOnTop(true, "screen-saver");
-  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  const showNotification = () => {
-    if (win.isDestroyed()) {
-      return;
-    }
-    relayoutNotificationWindows();
-    win.show();
-    win.setFocusable(false);
-    win.setIgnoreMouseEvents(true);
-    setTimeout(() => {
-      if (!win.isDestroyed()) {
-        win.close();
-      }
-    }, Math.max(2, settings.notificationTimeout) * 1000);
-  };
-  win.once("ready-to-show", showNotification);
-  win.webContents.once("did-finish-load", () => {
-    if (!win.isVisible()) {
-      showNotification();
-    }
-  });
-  win.on("closed", () => {
-    notificationWindows = notificationWindows.filter((candidate) => candidate !== win);
-    relayoutNotificationWindows();
-  });
-}
-
 async function showSettingsWindow(): Promise<void> {
   const win = await ensureSettingsWindow();
   if (win.isMinimized()) {
@@ -4999,6 +4753,9 @@ function registerConfiguredShortcuts(): void {
   mainWindow?.webContents.send(IPC_EVENT.BACKEND_STATUS, `Shortcuts registered: ${result.registered}`);
 }
 
+/**
+ * Boots all app services and creates primary windows/tray.
+ */
 async function createApp(): Promise<void> {
   loadSettings();
   migrateLegacyState();
@@ -5095,21 +4852,10 @@ async function createApp(): Promise<void> {
   }
 }
 
-app
-  .whenReady()
-  .then(createApp)
-  .catch((error: unknown) => {
-    const detail = normalizeError(error);
-    // Keep startup failures visible in both terminal logs and persisted app logs.
-    console.error(`[startup] ${detail}`);
-    pushLog(`ERROR: App startup failed: ${detail}`);
-    app.exit(1);
-  });
-app.on("window-all-closed", () => {});
-app.on("before-quit", () => {
-  isQuitting = true;
-  stopDdcMonitorRefresh();
-  presetSwitcherService.stop();
+/**
+ * Clears all notification timers controlled by the main process.
+ */
+function clearNotificationTimers(): void {
   clearHeadsetVolumeNotificationTimer();
   clearMicMuteNotificationTimer();
   clearOledNotificationTimer();
@@ -5122,6 +4868,12 @@ app.on("before-quit", () => {
   clearBaseBatteryStatusNotificationTimer();
   clearHeadsetBatterySwapNotificationTimer();
   clearHeadsetBatterySwapDelayTimer();
+}
+
+/**
+ * Resets transient notification payload/layout values that should not survive app shutdown.
+ */
+function resetNotificationTransientState(): void {
   headsetVolumePendingValue = null;
   headsetChatMixPendingValue = null;
   micMutePendingValue = null;
@@ -5138,55 +4890,55 @@ app.on("before-quit", () => {
   baseBatteryStatusPendingValue = null;
   headsetBatterySwapPendingValue = null;
   resetBatterySwapTrack();
-  if (headsetVolumeNotificationWindow && !headsetVolumeNotificationWindow.isDestroyed()) {
-    headsetVolumeNotificationWindow.destroy();
-    headsetVolumeNotificationWindow = null;
+}
+
+/**
+ * Destroys a BrowserWindow if it still exists and returns null for reassignment convenience.
+ */
+function destroyWindowRef(win: BrowserWindow | null): null {
+  if (win && !win.isDestroyed()) {
+    win.destroy();
   }
-  if (micMuteNotificationWindow && !micMuteNotificationWindow.isDestroyed()) {
-    micMuteNotificationWindow.destroy();
-    micMuteNotificationWindow = null;
-  }
-  if (oledNotificationWindow && !oledNotificationWindow.isDestroyed()) {
-    oledNotificationWindow.destroy();
-    oledNotificationWindow = null;
-  }
-  if (sidetoneNotificationWindow && !sidetoneNotificationWindow.isDestroyed()) {
-    sidetoneNotificationWindow.destroy();
-    sidetoneNotificationWindow = null;
-  }
-  if (presetChangeNotificationWindow && !presetChangeNotificationWindow.isDestroyed()) {
-    presetChangeNotificationWindow.destroy();
-    presetChangeNotificationWindow = null;
-  }
-  if (usbInputNotificationWindow && !usbInputNotificationWindow.isDestroyed()) {
-    usbInputNotificationWindow.destroy();
-    usbInputNotificationWindow = null;
-  }
-  if (ancModeNotificationWindow && !ancModeNotificationWindow.isDestroyed()) {
-    ancModeNotificationWindow.destroy();
-    ancModeNotificationWindow = null;
-  }
-  if (connectivityNotificationWindow && !connectivityNotificationWindow.isDestroyed()) {
-    connectivityNotificationWindow.destroy();
-    connectivityNotificationWindow = null;
-  }
-  if (batteryLowNotificationWindow && !batteryLowNotificationWindow.isDestroyed()) {
-    batteryLowNotificationWindow.destroy();
-    batteryLowNotificationWindow = null;
-  }
-  if (baseBatteryStatusNotificationWindow && !baseBatteryStatusNotificationWindow.isDestroyed()) {
-    baseBatteryStatusNotificationWindow.destroy();
-    baseBatteryStatusNotificationWindow = null;
-  }
-  if (headsetBatterySwapNotificationWindow && !headsetBatterySwapNotificationWindow.isDestroyed()) {
-    headsetBatterySwapNotificationWindow.destroy();
-    headsetBatterySwapNotificationWindow = null;
-  }
-  if (persistTimer) {
-    clearTimeout(persistTimer);
-    persistTimer = null;
-  }
-  persistNow();
+  return null;
+}
+
+/**
+ * Destroys all OSD notification windows owned directly by this module.
+ */
+function destroyNotificationOsdWindows(): void {
+  headsetVolumeNotificationWindow = destroyWindowRef(headsetVolumeNotificationWindow);
+  micMuteNotificationWindow = destroyWindowRef(micMuteNotificationWindow);
+  oledNotificationWindow = destroyWindowRef(oledNotificationWindow);
+  sidetoneNotificationWindow = destroyWindowRef(sidetoneNotificationWindow);
+  presetChangeNotificationWindow = destroyWindowRef(presetChangeNotificationWindow);
+  usbInputNotificationWindow = destroyWindowRef(usbInputNotificationWindow);
+  ancModeNotificationWindow = destroyWindowRef(ancModeNotificationWindow);
+  connectivityNotificationWindow = destroyWindowRef(connectivityNotificationWindow);
+  batteryLowNotificationWindow = destroyWindowRef(batteryLowNotificationWindow);
+  baseBatteryStatusNotificationWindow = destroyWindowRef(baseBatteryStatusNotificationWindow);
+  headsetBatterySwapNotificationWindow = destroyWindowRef(headsetBatterySwapNotificationWindow);
+}
+
+app
+  .whenReady()
+  .then(createApp)
+  .catch((error: unknown) => {
+    const detail = normalizeError(error);
+    // Keep startup failures visible in both terminal logs and persisted app logs.
+    console.error(`[startup] ${detail}`);
+    pushLog(`ERROR: App startup failed: ${detail}`);
+    app.exit(1);
+  });
+app.on("window-all-closed", () => {});
+app.on("before-quit", () => {
+  isQuitting = true;
+  notificationWindowService.closeAll();
+  stopDdcMonitorRefresh();
+  presetSwitcherService.stop();
+  clearNotificationTimers();
+  resetNotificationTransientState();
+  destroyNotificationOsdWindows();
+  persistenceService.flushPending(() => buildPersistedSnapshot());
   shortcutService.unregisterAll();
   void stopManagedDdcApi();
   backend?.stop();

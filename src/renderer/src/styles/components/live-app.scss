@@ -1,0 +1,187 @@
+.window-base {
+  background: var(--tray-background);
+  box-shadow:
+    0 10px 24px rgb(0 0 0 / 28%),
+    0.5px 0.5px 0 0.5px var(--tray-border) inset;
+  color: var(--tray-text);
+  border-radius: 8px;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  box-sizing: border-box;
+  padding: 14px;
+  filter: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: calc(13px * var(--ui-scale, 1));
+  overflow: hidden;
+}
+
+.app-shell-layout {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.standalone-page {
+  width: 100%;
+  height: 100%;
+}
+
+.standalone-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+
+.titlebar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2px;
+}
+
+.titlebar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.titlebar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.updated-inline {
+  font-size: 0.75em;
+  opacity: 0.68;
+}
+
+.titlebar .icons {
+  display: flex;
+  font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets";
+  font-size: 1.2em;
+  gap: 14px;
+}
+
+.titlebar .icons .icon-action {
+  cursor: pointer;
+  opacity: 0.72;
+}
+
+.titlebar .icons .icon-action svg {
+  display: block;
+}
+
+.gg-mark {
+  display: inline-flex;
+  place-items: center;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.2em;
+  height: 1.8em;
+  padding: 0 0.16em;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
+  font-size: 0.6em;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: currentColor;
+  transform: translateY(-0.3em);
+}
+
+.titlebar .icons .icon-action:hover,
+.titlebar .icons .icon-action[data-active="true"] {
+  opacity: 1;
+  color: var(--system-accent-medium);
+}
+
+.conn-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.conn-badge {
+  width: 1.45em;
+  height: 1.45em;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+}
+
+.title-conn .conn-badge {
+  width: 1.35em;
+  height: 1.35em;
+}
+
+.title-conn .status-icon {
+  font-size: 0.86em;
+  min-width: auto;
+}
+
+.topbar-battery-wrap {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.topbar-battery-row {
+  gap: 2px;
+  margin-bottom: 0;
+  font-size: 0.78em;
+}
+
+.topbar-battery-label {
+  min-width: 0;
+  font-size: 0.98em;
+  opacity: 0.78;
+  display: grid;
+  place-items: center;
+}
+
+.topbar-battery {
+  width: 28px;
+  height: 11px;
+  padding: 1px;
+}
+
+.topbar-battery .battery-tip {
+  right: -3px;
+  top: 3px;
+  width: 2px;
+  height: 4px;
+}
+
+.topbar-battery-percent {
+  font-size: 0.88em;
+  opacity: 0.78;
+}
+
+.conn-badge.on {
+  color: #8dffa1;
+  background: rgba(98, 255, 134, 0.12);
+  border-color: rgba(98, 255, 134, 0.35);
+}
+
+.conn-badge.off {
+  color: #ff8c8c;
+  background: rgba(255, 110, 110, 0.12);
+  border-color: rgba(255, 110, 110, 0.32);
+}
+
+.conn-badge.na {
+  color: #adadad;
+  background: rgba(150, 150, 150, 0.14);
+  border-color: rgba(150, 150, 150, 0.28);
+}

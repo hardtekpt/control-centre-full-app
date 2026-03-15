@@ -18,6 +18,9 @@ interface TrayOptions {
   onQuit: () => void;
 }
 
+/**
+ * Creates the application tray icon and its context menu.
+ */
 export function createTray(options: TrayOptions): Tray {
   const { image: icon } = resolveTrayIcon();
   const tray = new Tray(icon);
@@ -34,10 +37,16 @@ export function createTray(options: TrayOptions): Tray {
   return tray;
 }
 
+/**
+ * Builds the tray icon image using the same resolution strategy as createTray.
+ */
 export function buildTrayIcon() {
   return resolveTrayIcon().image;
 }
 
+/**
+ * Resolves tray icon image from project assets, packaged assets, then fallbacks.
+ */
 function resolveTrayIcon() {
   // Prefer concrete image assets first because Windows tray icon rendering can
   // fail for SVG sources depending on runtime/environment.
@@ -64,6 +73,9 @@ function resolveTrayIcon() {
   return { image: createBitmapFallbackIcon(), source: "bitmap-fallback" };
 }
 
+/**
+ * Loads an image from known tray-icon candidate paths.
+ */
 function loadTrayIconFromFile() {
   const appPath = safeAppPath();
   // Ordered from most likely locations in dev to packaged resource locations.
@@ -103,10 +115,16 @@ function loadTrayIconFromFile() {
   return nativeImage.createEmpty();
 }
 
+/**
+ * Converts inline SVG content into an Electron NativeImage.
+ */
 function svgToImage(svg: string) {
   return nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`);
 }
 
+/**
+ * Loads either SVG or raster image from disk.
+ */
 function loadSvgAtPath(iconPath: string) {
   try {
     if (!fs.existsSync(iconPath)) {
@@ -122,6 +140,9 @@ function loadSvgAtPath(iconPath: string) {
   }
 }
 
+/**
+ * Reads app path safely during both packaged and development startup stages.
+ */
 function safeAppPath(): string {
   try {
     return app.getAppPath();
@@ -130,6 +151,9 @@ function safeAppPath(): string {
   }
 }
 
+/**
+ * Builds a tiny in-memory bitmap used as final tray icon fallback.
+ */
 function createBitmapFallbackIcon() {
   const width = 16;
   const height = 16;

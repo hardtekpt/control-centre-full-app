@@ -6,6 +6,9 @@ import { useIpc } from "../hooks/useIpc";
 
 export type MixerData = MixerDataPayload;
 
+/**
+ * Normalizes numeric values to integer percentage range [0..100].
+ */
 function clampPercent(value: number): number {
   const numeric = Number(value);
   return Math.max(0, Math.min(100, Math.floor(Number.isFinite(numeric) ? numeric : 0)));
@@ -15,6 +18,9 @@ export type DdcMonitor = DdcMonitorPayload;
 
 export type ServiceStatus = ServiceStatusPayload;
 
+/**
+ * Central renderer state hook that bridges preload IPC events with React state.
+ */
 export function useBridgeState() {
   const { invoke: invokeServiceStatus } = useIpc(IPC_INVOKE.SERVICES_GET_STATUS);
   const { invoke: invokeDdcMonitors } = useIpc(IPC_INVOKE.DDC_GET_MONITORS);
@@ -39,8 +45,14 @@ export function useBridgeState() {
   // Short per-channel write lock so backend echoes do not immediately overwrite
   // optimistic UI edits while Sonar applies the change.
   const lockedUntilRef = useRef<Record<string, number>>({});
-  const addLog = (text: string) =>
-    setLogs((prev) => [`${new Date().toLocaleTimeString()}  ${text}`, ...prev].slice(0, 200));
+  /**
+   * Appends a timestamped log line to the local in-memory log buffer.
+   */
+  const addLog = (text: string) => setLogs((prev) => [`${new Date().toLocaleTimeString()}  ${text}`, ...prev].slice(0, 200));
+
+  /**
+   * Merges updated monitor payload into local cache while preserving order.
+   */
   const upsertDdcMonitor = (nextMonitor: DdcMonitor) => {
     setDdcMonitors((prev) => {
       const next = [...prev.filter((item) => item.monitor_id !== nextMonitor.monitor_id), nextMonitor].sort((a, b) => a.monitor_id - b.monitor_id);
@@ -56,6 +68,9 @@ export function useBridgeState() {
     return "dashboard";
   }, []);
 
+  /**
+   * Subscribes renderer state to initial payload + live backend events.
+   */
   useEffect(() => {
     let disposed = false;
     window.arctisBridge.getInitial().then(async (payload) => {
@@ -137,6 +152,9 @@ export function useBridgeState() {
     };
   }, [windowMode]);
 
+  /**
+   * Polls service status in settings mode for a lightweight diagnostics view.
+   */
   useEffect(() => {
     if (!ready || windowMode === "dashboard") {
       return;
@@ -147,6 +165,9 @@ export function useBridgeState() {
     return () => window.clearInterval(timer);
   }, [invokeServiceStatus, ready, windowMode]);
 
+  /**
+   * Fetches DDC monitor details when opening settings mode.
+   */
   useEffect(() => {
     if (!ready || windowMode === "dashboard") {
       return;
@@ -160,6 +181,9 @@ export function useBridgeState() {
     });
   }, [invokeDdcMonitors, ready, windowMode]);
 
+  /**
+   * Applies runtime theme values to CSS variables and scale.
+   */
   useEffect(() => {
     if (!settings) return;
     const isDark = settings.themeMode === "system" ? theme.isDark : settings.themeMode === "dark";
@@ -171,12 +195,18 @@ export function useBridgeState() {
     document.documentElement.style.setProperty("--ui-scale", `${Math.max(80, Math.min(140, settings.textScale)) / 100}`);
   }, [theme, settings]);
 
+  /**
+   * Persists partial settings and updates local cached settings state.
+   */
   const persistSettings = async (partial: Partial<UiSettings>) => {
     const next = await window.arctisBridge.setSettings(partial);
     setSettingsState(next);
     return next;
   };
 
+  /**
+   * Temporarily locks a channel so optimistic UI changes are not immediately overwritten.
+   */
   const lockChannel = (channel: string, ms = 1000) => {
     lockedUntilRef.current[channel] = Date.now() + ms;
   };

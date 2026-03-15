@@ -1,0 +1,43 @@
+.channel-row {
+  display: grid;
+  grid-template-rows: auto 126px auto auto auto auto;
+  justify-items: center;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 4px;
+  border-radius: 8px;
+  background: rgba(0255, 255, 255, 0.06);
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: none;
+}
+
+.channel-card-title {
+  font-weight: 600;
+  font-size: 0.86em;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+.channel-value {
+  font-size: 0.9em;
+  opacity: 0.9;
+}
+
+.mute-toggle {
+  width: 2.2em;
+  height: 2.2em;
+  border: 0;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: var(--tray-text);
+  background: rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+}
+
+.mute-toggle.is-muted {
+  color: #ff8a8a;
+  background: rgba(255, 80, 80, 0.16);
+}

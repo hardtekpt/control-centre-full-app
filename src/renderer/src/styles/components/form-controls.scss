@@ -1,0 +1,47 @@
+select {
+  background: var(--button-background);
+  border: 0;
+  box-shadow: inset 0 0.25px 0 0.5px var(--button-border), 0 0.5px 1px 0 rgb(0 0 0 / 20%);
+  border-radius: 6px;
+  padding: 4px 6px;
+  color: var(--tray-text);
+  width: 74px;
+  max-width: 74px;
+  font-size: 0.73em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+select option {
+  background: color-mix(in srgb, var(--tray-background) 92%, #000 8%);
+  color: var(--tray-text);
+  font-size: 0.95em;
+}
+
+.text-input {
+  width: 100%;
+  background: var(--button-background);
+  border: 0;
+  border-radius: 6px;
+  color: var(--tray-text);
+  padding: 7px 9px;
+}
+
+.button {
+  background: var(--button-background);
+  border: 0;
+  border-radius: 6px;
+  box-shadow: inset 0 0.25px 0 0.5px var(--button-border), 0 0.5px 1px 0 rgb(0 0 0 / 20%);
+  padding: 6px 10px;
+  color: var(--tray-text);
+}
+
+.button:hover {
+  background: var(--button-highlight);
+}
+
+.button-compact {
+  padding: 6px 10px;
+}

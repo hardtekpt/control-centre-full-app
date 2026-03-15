@@ -45,11 +45,19 @@ export function createMixerIpcHandlers(deps: CreateMixerIpcHandlersDeps): MixerI
     schedulePersist,
   } = deps;
 
+  /**
+   * Picks the selected output id, falling back to first available output.
+   */
+  function resolveSelectedOutputId(outputs: MixerOutput[]): string {
+    const current = getSelectedOutputId();
+    return current && outputs.some((output) => output.id === current) ? current : outputs[0]?.id ?? "default";
+  }
+
   return {
     getMixerData: async () => {
       const outputs = await getMixerOutputs();
       const current = getSelectedOutputId();
-      const selectedOutputId = current && outputs.some((output) => output.id === current) ? current : outputs[0]?.id ?? "default";
+      const selectedOutputId = resolveSelectedOutputId(outputs);
       if (selectedOutputId !== current) {
         setSelectedOutputId(selectedOutputId);
         schedulePersist();

@@ -57,6 +57,26 @@ export function createAppIpcHandlers(deps: CreateAppIpcHandlersDeps): AppIpcHand
     showHeadsetBatterySwapNotification,
   } = deps;
 
+  /**
+   * Opens SteelSeries GG from known install paths, then protocol fallback.
+   */
+  async function openGg(): Promise<OpenGgResponse> {
+    for (const exePath of GG_EXECUTABLE_PATHS) {
+      if (!fileExists(exePath)) {
+        continue;
+      }
+      const openResult = await openPath(exePath);
+      return { ok: openResult === "", detail: openResult || exePath };
+    }
+
+    try {
+      await openExternal("steelseriesgg://");
+      return { ok: true, detail: "steelseriesgg://" };
+    } catch (error) {
+      return { ok: false, detail: normalizeError(error) };
+    }
+  }
+
   return {
     previewHeadsetVolume: (payload) => {
       const volume = toNullablePercent(typeof payload === "number" ? payload : Number(payload));
@@ -65,22 +85,7 @@ export function createAppIpcHandlers(deps: CreateAppIpcHandlersDeps): AppIpcHand
       }
       void showHeadsetVolumeNotification({ volume });
     },
-    openGg: async () => {
-      for (const exePath of GG_EXECUTABLE_PATHS) {
-        if (!fileExists(exePath)) {
-          continue;
-        }
-        const openResult = await openPath(exePath);
-        return { ok: openResult === "", detail: openResult || exePath };
-      }
-
-      try {
-        await openExternal("steelseriesgg://");
-        return { ok: true, detail: "steelseriesgg://" };
-      } catch (error) {
-        return { ok: false, detail: normalizeError(error) };
-      }
-    },
+    openGg,
     notifyCustom: async (payload) => {
       const title = String(payload?.title ?? "").trim() || "Control Centre";
       const body = String(payload?.body ?? "").trim() || "Notification";

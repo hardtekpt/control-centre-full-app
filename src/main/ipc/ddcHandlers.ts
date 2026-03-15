@@ -53,6 +53,16 @@ export function createDdcIpcHandlers(deps: CreateDdcIpcHandlersDeps): DdcIpcHand
     ddcBaseUrl,
   } = deps;
 
+  /**
+   * Inserts or replaces monitor in cache and keeps stable monitor id ordering.
+   */
+  function updateMonitorCache(monitorId: number, monitor: DdcMonitorPayload): void {
+    const nextCache = [...getMonitorsCache().filter((item) => item.monitor_id !== monitorId), monitor].sort((a, b) => a.monitor_id - b.monitor_id);
+    setMonitorsCache(nextCache);
+    setMonitorsCacheTs(Date.now());
+    broadcastDdcUpdate();
+  }
+
   return {
     getDdcMonitors: async () => {
       debugDdc("ipc ddc:get-monitors begin");
@@ -90,10 +100,7 @@ export function createDdcIpcHandlers(deps: CreateDdcIpcHandlersDeps): DdcIpcHand
           throw new Error("DDC native service is not initialized.");
         }
         const monitor = service.setBrightness(monitorId, value) as DdcMonitorPayload;
-        const nextCache = [...getMonitorsCache().filter((item) => item.monitor_id !== monitorId), monitor].sort((a, b) => a.monitor_id - b.monitor_id);
-        setMonitorsCache(nextCache);
-        setMonitorsCacheTs(Date.now());
-        broadcastDdcUpdate();
+        updateMonitorCache(monitorId, monitor);
         pushLog(`DDC: monitor ${monitorId} brightness set to ${value}.`);
         debugDdc(`ipc ddc:set-brightness ok monitor=${monitorId}`);
         return { ok: true, monitor };
@@ -118,10 +125,7 @@ export function createDdcIpcHandlers(deps: CreateDdcIpcHandlersDeps): DdcIpcHand
           throw new Error("DDC native service is not initialized.");
         }
         const monitor = service.setInputSource(monitorId, value) as DdcMonitorPayload;
-        const nextCache = [...getMonitorsCache().filter((item) => item.monitor_id !== monitorId), monitor].sort((a, b) => a.monitor_id - b.monitor_id);
-        setMonitorsCache(nextCache);
-        setMonitorsCacheTs(Date.now());
-        broadcastDdcUpdate();
+        updateMonitorCache(monitorId, monitor);
         pushLog(`DDC: monitor ${monitorId} input set to ${value}.`);
         debugDdc(`ipc ddc:set-input-source ok monitor=${monitorId}`);
         return { ok: true, monitor };

@@ -1,0 +1,76 @@
+.shortcut-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid #ffffff1a;
+  border-radius: 8px;
+  padding: 6px;
+}
+
+.shortcut-field {
+  width: auto;
+  max-width: none;
+}
+
+.preset-rule-row {
+  align-items: center;
+}
+
+select.shortcut-field {
+  width: auto;
+  max-width: none;
+}
+
+.shortcut-field-accelerator {
+  width: 180px;
+}
+
+.shortcut-field-action {
+  width: 220px;
+}
+
+.shortcut-field-channel {
+  width: 110px;
+}
+
+.shortcut-field-preset {
+  width: 190px;
+}
+
+.shortcut-field-monitor {
+  width: 180px;
+}
+
+.shortcut-field-input {
+  width: 130px;
+}
+
+.shortcut-field-number {
+  width: 82px;
+  padding: 5px 6px;
+}
+
+.shortcut-add {
+  margin-top: 8px;
+}
+
+.shortcut-delete,
+.shortcut-add-btn {
+  padding: 5px 8px;
+}
+
+.settings-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}

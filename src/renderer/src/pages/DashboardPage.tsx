@@ -26,17 +26,26 @@ interface DashboardPageProps {
   onSetDdcInputSource: (monitorId: number, value: string) => void;
 }
 
+/**
+ * Main dashboard layout: status cards, Sonar channels, and optional Windows mixer.
+ */
 export default function DashboardPage(props: DashboardPageProps) {
   const [tab, setTab] = useState<"sonar" | "windows">("sonar");
   const visible = CHANNELS.filter((channel) => props.visibleChannels.includes(channel));
   const windowsMixerEnabled = props.windowsMixerEnabled !== false;
 
+  /**
+   * Refreshes mixer data only when the user enters the Windows mixer tab.
+   */
   useEffect(() => {
     if (tab === "windows" && windowsMixerEnabled) {
       props.onRefreshMixer();
     }
   }, [tab, windowsMixerEnabled]);
 
+  /**
+   * Ensures hidden feature tabs cannot remain selected after settings changes.
+   */
   useEffect(() => {
     if (!windowsMixerEnabled && tab === "windows") {
       setTab("sonar");

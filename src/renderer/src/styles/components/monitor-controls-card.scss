@@ -1,0 +1,79 @@
+.monitor-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: fit-content;
+  max-width: 100%;
+  align-self: start;
+}
+
+.monitor-card-title-row {
+  display: flex;
+  justify-content: flex-start;
+  align-items: baseline;
+}
+
+.monitor-card-title {
+  margin-bottom: 0;
+}
+
+.monitor-empty {
+  font-size: 0.8em;
+  opacity: 0.72;
+}
+
+.monitor-inline-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(100px, 1fr) auto;
+  align-items: center;
+  gap: 2px;
+}
+
+.monitor-inline-row-disconnected {
+  opacity: 0.82;
+}
+
+.monitor-inline-name {
+  font-size: 0.76em;
+  opacity: 0.78;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
+}
+
+.monitor-inline-icon {
+  color: var(--tray-text);
+  opacity: 0.88;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.monitor-slider {
+  min-width: 0;
+}
+
+.monitor-inline-disconnected-text {
+  font-size: 0.76em;
+  opacity: 0.72;
+  min-width: 0;
+}
+
+.monitor-input-icon-btn {
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.monitor-input-index {
+  font-size: 0.82em;
+  font-weight: 700;
+  line-height: 1;
+}

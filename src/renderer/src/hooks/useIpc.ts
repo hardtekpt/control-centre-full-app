@@ -26,6 +26,9 @@ export function useIpc<C extends InvokeChannel>(channel: C, options: UseIpcOptio
   const [error, setError] = useState<string | null>(null);
   const argsKey = useMemo(() => JSON.stringify(args ?? []), [args]);
 
+  /**
+   * Invokes the typed preload channel and tracks loading/error/data state.
+   */
   const invoke = useCallback(
     async (...params: InvokeArgs<C>): Promise<InvokeResult<C>> => {
       setLoading(true);
@@ -45,6 +48,9 @@ export function useIpc<C extends InvokeChannel>(channel: C, options: UseIpcOptio
     [channel],
   );
 
+  /**
+   * Optional auto-invoke mode for initial data fetch patterns.
+   */
   useEffect(() => {
     if (!autoInvoke || !enabled) {
       return;

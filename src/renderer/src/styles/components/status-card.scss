@@ -1,0 +1,93 @@
+.status-compact-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: stretch;
+  justify-content: flex-start;
+}
+
+.status-block {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 5px 6px;
+  min-height: 0;
+  width: fit-content;
+  min-width: 0;
+  max-width: none;
+  flex: 0 0 auto;
+}
+
+.status-block-title {
+  font-size: 0.74em;
+  opacity: 0.72;
+  margin-bottom: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.84em;
+  line-height: 1.2;
+  margin-top: 2px;
+}
+
+.status-icon {
+  font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets";
+  font-size: 0.95em;
+  opacity: 0.9;
+  min-width: 14px;
+}
+
+.battery-icon-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+  font-size: 0.82em;
+}
+
+.battery-icon {
+  position: relative;
+  width: 36px;
+  height: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  border-radius: 3px;
+  padding: 2px 2px 2px 2px;
+}
+
+.battery-tip {
+  position: absolute;
+  right: -4px;
+  top: 4px;
+  width: 3px;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.34);
+  border-radius: 0 1px 1px 0;
+}
+
+.battery-bars {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px;
+  height: 100%;
+}
+
+.battery-bars span {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 1px;
+}
+
+.battery-bars span.on {
+  background: var(--system-accent-medium);
+}
+
+.status-card {
+  width: fit-content;
+  max-width: 100%;
+  height: auto;
+  min-height: auto;
+  justify-self: start;
+}

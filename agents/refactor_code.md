@@ -27,9 +27,13 @@ Refactor the codebase into a clear Electron + React + TypeScript structure with 
    - Status: Completed
 
 4. Main-process architecture alignment
+   - Extracted snapshot persistence/migration IO into `src/main/services/persistence/service.ts`.
+   - Extracted notification timer lifecycle orchestration into `src/main/services/notifications/timerService.ts`.
+   - Extracted app-level notification popup window stack/layout into `src/main/services/notifications/windowService.ts`.
+   - Wired `src/main/index.ts` to consume notification services while preserving existing notification behavior.
    - Continue extracting notification lifecycle and persistence into dedicated services.
    - Keep `src/main/index.ts` as orchestration entry only.
-   - Status: Pending
+   - Status: In Progress
 
 5. Renderer state architecture alignment
    - Keep typed bridge usage centralized and maintain store-driven UI updates.

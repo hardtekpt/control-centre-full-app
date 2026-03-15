@@ -8,6 +8,9 @@ const MAX_W = 4096;
 const MIN_H = 260;
 const MAX_H = 2160;
 
+/**
+ * Creates the main flyout window with hardened Electron security defaults.
+ */
 export function createFlyoutWindow(settings: UiSettings): BrowserWindow {
   const win = new BrowserWindow({
     width: clamp(settings.flyoutWidth, MIN_W, MAX_W),
@@ -36,6 +39,9 @@ export function createFlyoutWindow(settings: UiSettings): BrowserWindow {
   return win;
 }
 
+/**
+ * Positions a window at the bottom-right corner of the provided display.
+ */
 export function positionBottomRight(win: BrowserWindow, display = screen.getPrimaryDisplay()): void {
   const bounds = display.workArea;
   const windowBounds = win.getBounds();
@@ -45,6 +51,9 @@ export function positionBottomRight(win: BrowserWindow, display = screen.getPrim
   win.setPosition(x, y, false);
 }
 
+/**
+ * Persists clamped flyout bounds back into settings.
+ */
 export function saveWindowBounds(win: BrowserWindow, settings: UiSettings): UiSettings {
   const b: Rectangle = win.getBounds();
   return {
@@ -54,6 +63,9 @@ export function saveWindowBounds(win: BrowserWindow, settings: UiSettings): UiSe
   };
 }
 
+/**
+ * Clamps numeric values to an inclusive min/max range.
+ */
 function clamp(value: number, low: number, high: number): number {
   return Math.min(high, Math.max(low, value));
 }
