@@ -33,30 +33,31 @@ export class ArctisApiService extends EventEmitter {
   private lastError = "";
   private lastPresetRefresh = 0;
   private baseStationEvents: BaseStationEventListener | null = null;
+  private running = false;
+  private sonarEnabled = true;
+  private hidEventsEnabled = true;
+  private sonarPollIntervalMs = 2000;
 
   public start(): void {
-    if (this.timer) {
+    if (this.running) {
       return;
     }
-    this.baseStationEvents = new BaseStationEventListener(
-      (patch) => this.applyHeadsetEventPatch(patch),
-      (detail) => this.emit("status", `base-station event listener: ${detail}`),
-    );
-    this.baseStationEvents.start();
-    this.emit("status", "starting native Arctis API service");
-    void this.refresh(true);
-    this.timer = setInterval(() => {
-      void this.refresh(false);
-    }, 700);
+    this.running = true;
+    this.emit("status", "Arctis background service started.");
+    this.applyRuntimeConfig(true);
   }
 
   public stop(): void {
+    if (!this.running && !this.timer && !this.baseStationEvents) {
+      return;
+    }
+    this.running = false;
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
     }
-    this.baseStationEvents?.stop();
-    this.baseStationEvents = null;
+    this.stopHidListener();
+    this.emit("status", "Arctis background service stopped.");
   }
 
   public send(cmd: BackendCommand): void {
@@ -75,8 +76,50 @@ export class ArctisApiService extends EventEmitter {
     await this.refresh(true);
   }
 
+  public configureRuntime(config: {
+    sonarEnabled?: boolean;
+    hidEventsEnabled?: boolean;
+    sonarPollIntervalMs?: number;
+  }): void {
+    if (config.sonarEnabled != null) {
+      this.sonarEnabled = Boolean(config.sonarEnabled);
+    }
+    if (config.hidEventsEnabled != null) {
+      this.hidEventsEnabled = Boolean(config.hidEventsEnabled);
+    }
+    if (config.sonarPollIntervalMs != null) {
+      this.sonarPollIntervalMs = this.normalizePollIntervalMs(config.sonarPollIntervalMs);
+    }
+    this.applyRuntimeConfig(false);
+  }
+
+  public getRuntimeStatus(): {
+    running: boolean;
+    sonarEnabled: boolean;
+    hidEventsEnabled: boolean;
+    sonarPollingActive: boolean;
+    hidListenerActive: boolean;
+    sonarUrl: string | null;
+    lastError: string | null;
+    sonarPollIntervalMs: number;
+  } {
+    return {
+      running: this.running,
+      sonarEnabled: this.sonarEnabled,
+      hidEventsEnabled: this.hidEventsEnabled,
+      sonarPollingActive: Boolean(this.timer),
+      hidListenerActive: Boolean(this.baseStationEvents),
+      sonarUrl: this.sonarUrl || null,
+      lastError: this.lastError || null,
+      sonarPollIntervalMs: this.sonarPollIntervalMs,
+    };
+  }
+
   private async applyCommand(cmd: BackendCommand): Promise<void> {
     try {
+      if (!this.running || !this.sonarEnabled) {
+        throw new Error("Sonar API service is disabled.");
+      }
       await this.ensureDiscovered();
       if (!this.sonarUrl) {
         throw new Error("Sonar endpoint unavailable.");
@@ -117,6 +160,15 @@ export class ArctisApiService extends EventEmitter {
   }
 
   private async refresh(forceEmit: boolean): Promise<void> {
+    if (!this.running) {
+      return;
+    }
+    if (!this.sonarEnabled) {
+      if (forceEmit) {
+        this.emit("state", this.state);
+      }
+      return;
+    }
     try {
       await this.ensureDiscovered();
       if (!this.sonarUrl) {
@@ -131,14 +183,12 @@ export class ArctisApiService extends EventEmitter {
       const chatMixPayload = await this.getJson(`${this.sonarUrl}/chatMix`).catch(() => ({}));
       const channelVolume = this.extractVolumes(volumePayload);
       const channelMute = this.extractMutes(volumePayload);
-      const headsetSnapshot = this.baseStationEvents?.getSnapshot() ?? {};
 
       const selectedPresets = await this.extractSelectedPresets();
       const resolvedSelectedPresets = this.resolveSelectedPresetState(selectedPresets, forceEmit);
 
       const next = mergeState({
         ...this.state,
-        ...headsetSnapshot,
         channel_volume: channelVolume,
         channel_mute: channelMute,
         channel_apps: this.extractRoutedApps(routedPayload),
@@ -801,6 +851,9 @@ export class ArctisApiService extends EventEmitter {
   }
 
   private applyHeadsetEventPatch(patch: Partial<AppState>): void {
+    if (!this.running || !this.hidEventsEnabled) {
+      return;
+    }
     if (!patch || Object.keys(patch).length === 0) {
       return;
     }
@@ -928,5 +981,74 @@ export class ArctisApiService extends EventEmitter {
       return err.message;
     }
     return String(err);
+  }
+
+  private applyRuntimeConfig(forceRefresh: boolean): void {
+    if (!this.running) {
+      if (this.timer) {
+        clearInterval(this.timer);
+        this.timer = null;
+      }
+      this.stopHidListener();
+      return;
+    }
+
+    if (this.hidEventsEnabled) {
+      this.startHidListener();
+    } else {
+      this.stopHidListener();
+      this.emit("hid-status", "HID event listener disabled in settings.");
+    }
+
+    if (!this.sonarEnabled) {
+      if (this.timer) {
+        clearInterval(this.timer);
+        this.timer = null;
+      }
+      this.emit("status", "Sonar polling disabled in settings.");
+      return;
+    }
+
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    this.emit("status", `Sonar polling active (${Math.round(this.sonarPollIntervalMs / 100) / 10}s).`);
+    this.timer = setInterval(() => {
+      void this.refresh(false);
+    }, this.sonarPollIntervalMs);
+    if (forceRefresh) {
+      void this.refresh(true);
+    }
+  }
+
+  private startHidListener(): void {
+    if (this.baseStationEvents) {
+      return;
+    }
+    this.baseStationEvents = new BaseStationEventListener(
+      (patch) => this.applyHeadsetEventPatch(patch),
+      (detail) => this.emit("hid-status", detail),
+    );
+    this.baseStationEvents.start();
+    this.emit("hid-status", "HID event listener active.");
+  }
+
+  private stopHidListener(): void {
+    if (!this.baseStationEvents) {
+      return;
+    }
+    this.baseStationEvents.stop();
+    this.baseStationEvents = null;
+    this.emit("hid-status", "HID event listener stopped.");
+  }
+
+  private normalizePollIntervalMs(value: number): number {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+      return 2000;
+    }
+    const ms = numeric <= 120 ? numeric * 1000 : numeric;
+    return Math.max(500, Math.min(60_000, Math.round(ms)));
   }
 }

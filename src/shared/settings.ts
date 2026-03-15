@@ -53,6 +53,15 @@ export const DEFAULT_SETTINGS: UiSettings = {
     presetChange: true,
   },
   automaticPresetRules: [],
+  services: {
+    sonarApiEnabled: true,
+    hidEventsEnabled: true,
+    ddcEnabled: true,
+    notificationsEnabled: true,
+    automaticPresetSwitcherEnabled: true,
+    shortcutsEnabled: true,
+    sonarPollIntervalMs: 2000,
+  },
   ddc: {
     apiBaseUrl: "http://127.0.0.1:59321",
     pollIntervalMs: 300000,
@@ -109,6 +118,10 @@ export function mergeSettings(partial?: Partial<UiSettings>): UiSettings {
     partialSanitized.visibleChannels?.filter((channel): channel is ChannelKey => DEFAULT_CHANNELS.includes(channel)) ??
     DEFAULT_SETTINGS.visibleChannels;
   const automaticPresetRules = sanitizeAutomaticPresetRules(partialSanitized.automaticPresetRules);
+  const rawSonarPoll = Number(
+    partialSanitized.services?.sonarPollIntervalMs ?? DEFAULT_SETTINGS.services.sonarPollIntervalMs,
+  );
+  const sonarPollIntervalMs = rawSonarPoll <= 120 ? rawSonarPoll * 1000 : rawSonarPoll;
   const dashboardMonitorIdRaw = Number(partialSanitized.ddc?.dashboardMonitorId);
   const dashboardMonitorId =
     Number.isFinite(dashboardMonitorIdRaw) && dashboardMonitorIdRaw > 0 ? Math.round(dashboardMonitorIdRaw) : null;
@@ -149,6 +162,17 @@ export function mergeSettings(partial?: Partial<UiSettings>): UiSettings {
     notifications: {
       ...DEFAULT_SETTINGS.notifications,
       ...notificationsWithLegacy,
+    },
+    services: {
+      ...DEFAULT_SETTINGS.services,
+      ...(partialSanitized.services ?? {}),
+      sonarApiEnabled: partialSanitized.services?.sonarApiEnabled !== false,
+      hidEventsEnabled: partialSanitized.services?.hidEventsEnabled !== false,
+      ddcEnabled: partialSanitized.services?.ddcEnabled !== false,
+      notificationsEnabled: partialSanitized.services?.notificationsEnabled !== false,
+      automaticPresetSwitcherEnabled: partialSanitized.services?.automaticPresetSwitcherEnabled !== false,
+      shortcutsEnabled: partialSanitized.services?.shortcutsEnabled !== false,
+      sonarPollIntervalMs: clamp(sonarPollIntervalMs, 500, 60_000),
     },
     ddc: {
       ...DEFAULT_SETTINGS.ddc,

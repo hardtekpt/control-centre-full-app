@@ -39,8 +39,12 @@ export function useBridgeState() {
   const [ddcError, setDdcError] = useState<string | null>(null);
   const [flyoutPinned, setFlyoutPinned] = useState(false);
   const [serviceStatus, setServiceStatus] = useState<ServiceStatus>({
-    arctisApi: { state: "starting", detail: "Initializing..." },
+    sonarApi: { state: "starting", detail: "Initializing...", endpoint: null, pollIntervalMs: 2000 },
+    hidEvents: { state: "starting", detail: "Initializing..." },
     ddcApi: { state: "starting", detail: "Initializing...", endpoint: "", managed: false, pid: null },
+    notifications: { state: "starting", detail: "Initializing..." },
+    automaticPresetSwitcher: { state: "starting", detail: "Initializing..." },
+    shortcuts: { state: "starting", detail: "Initializing..." },
   });
   // Short per-channel write lock so backend echoes do not immediately overwrite
   // optimistic UI edits while Sonar applies the change.

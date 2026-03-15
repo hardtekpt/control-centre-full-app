@@ -56,4 +56,8 @@ export class ShortcutService {
     }
     this.registered.clear();
   }
+
+  public getRegisteredCount(): number {
+    return this.registered.size;
+  }
 }

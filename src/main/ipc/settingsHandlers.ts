@@ -18,9 +18,9 @@ interface NotificationWindows {
 export interface CreateSettingsIpcHandlerDeps {
   getSettings: () => UiSettings;
   persistSettings: (next: UiSettings) => UiSettings;
+  applyRuntimeServiceSettings: (previous: UiSettings, next: UiSettings) => void;
   setPresetRules: (rules: UiSettings["automaticPresetRules"]) => void;
   restartDdcMonitorRefresh: () => void;
-  registerConfiguredShortcuts: () => void;
   onFlyoutSettingsChanged: () => void;
   getNotificationWindows: () => NotificationWindows;
   closeWindowIfOpen: (windowRef: BrowserWindow | null) => void;
@@ -42,9 +42,9 @@ export function createSettingsIpcHandler(deps: CreateSettingsIpcHandlerDeps): (p
   const {
     getSettings,
     persistSettings,
+    applyRuntimeServiceSettings,
     setPresetRules,
     restartDdcMonitorRefresh,
-    registerConfiguredShortcuts,
     onFlyoutSettingsChanged,
     getNotificationWindows,
     closeWindowIfOpen,
@@ -68,6 +68,10 @@ export function createSettingsIpcHandler(deps: CreateSettingsIpcHandlerDeps): (p
         ...currentSettings.notifications,
         ...(partial.notifications ?? {}),
       },
+      services: {
+        ...currentSettings.services,
+        ...(partial.services ?? {}),
+      },
       ddc: {
         ...currentSettings.ddc,
         ...(partial.ddc ?? {}),
@@ -82,13 +86,14 @@ export function createSettingsIpcHandler(deps: CreateSettingsIpcHandlerDeps): (p
       setPresetRules(next.automaticPresetRules);
     }
 
+    applyRuntimeServiceSettings(currentSettings, next);
+
     if (partial.ddc?.pollIntervalMs !== undefined && Number(partial.ddc?.pollIntervalMs) !== currentSettings.ddc.pollIntervalMs) {
       restartDdcMonitorRefresh();
     } else if (partial.ddc) {
       restartDdcMonitorRefresh();
     }
 
-    registerConfiguredShortcuts();
     onFlyoutSettingsChanged();
 
     const windows = getNotificationWindows();

@@ -12,6 +12,16 @@ interface AppSettingsTabProps {
  * Global app preferences shown in the Settings page.
  */
 export default function AppSettingsTab({ settings, shortcutDraft, onShortcutDraftChange, onShortcutDraftCommit, onUpdate }: AppSettingsTabProps) {
+  const serviceSettings = settings.services;
+  const updateServiceSetting = <K extends keyof UiSettings["services"],>(key: K, value: UiSettings["services"][K]) => {
+    onUpdate({
+      services: {
+        ...serviceSettings,
+        [key]: value,
+      },
+    });
+  };
+
   return (
     <>
       <h3>App Settings</h3>
@@ -57,6 +67,57 @@ export default function AppSettingsTab({ settings, shortcutDraft, onShortcutDraf
           onBlur={onShortcutDraftCommit}
           placeholder="CommandOrControl+Shift+A"
         />
+      </label>
+
+      <h4>Background Services</h4>
+      <label className="form-row">
+        <span>Sonar GG API service</span>
+        <input type="checkbox" checked={serviceSettings.sonarApiEnabled !== false} onChange={(event) => updateServiceSetting("sonarApiEnabled", event.currentTarget.checked)} />
+      </label>
+      <label className="form-row">
+        <span>Sonar poll interval (seconds)</span>
+        <div className="accent-row">
+          <input
+            className="text-input"
+            type="number"
+            min={1}
+            max={60}
+            step={1}
+            value={Math.max(1, Math.round((serviceSettings.sonarPollIntervalMs ?? 2000) / 1000))}
+            onChange={(event) =>
+              updateServiceSetting("sonarPollIntervalMs", Math.max(1, Math.round(Number(event.currentTarget.value) || 2)) * 1000)
+            }
+          />
+          <span>s</span>
+        </div>
+      </label>
+      <label className="form-row">
+        <span>HID Events service</span>
+        <input type="checkbox" checked={serviceSettings.hidEventsEnabled !== false} onChange={(event) => updateServiceSetting("hidEventsEnabled", event.currentTarget.checked)} />
+      </label>
+      <label className="form-row">
+        <span>DDC service</span>
+        <input type="checkbox" checked={serviceSettings.ddcEnabled !== false} onChange={(event) => updateServiceSetting("ddcEnabled", event.currentTarget.checked)} />
+      </label>
+      <label className="form-row">
+        <span>Notifications service</span>
+        <input
+          type="checkbox"
+          checked={serviceSettings.notificationsEnabled !== false}
+          onChange={(event) => updateServiceSetting("notificationsEnabled", event.currentTarget.checked)}
+        />
+      </label>
+      <label className="form-row">
+        <span>Automatic Preset Switcher service</span>
+        <input
+          type="checkbox"
+          checked={serviceSettings.automaticPresetSwitcherEnabled !== false}
+          onChange={(event) => updateServiceSetting("automaticPresetSwitcherEnabled", event.currentTarget.checked)}
+        />
+      </label>
+      <label className="form-row">
+        <span>Shortcuts service</span>
+        <input type="checkbox" checked={serviceSettings.shortcutsEnabled !== false} onChange={(event) => updateServiceSetting("shortcutsEnabled", event.currentTarget.checked)} />
       </label>
     </>
   );

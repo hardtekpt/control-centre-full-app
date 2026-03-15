@@ -141,11 +141,11 @@ const presetSwitcherService = new (PresetSwitcherServiceImpl as PresetSwitcherSe
   },
   onActiveAppUpdate: (activeApp) => {
     if (activeApp) {
-      pushLog(`Automatic preset switcher active app: ${activeApp.name}`);
+      pushServiceLog("presetSwitcher", `Active app: ${activeApp.name}`);
     }
   },
   onLog: (message) => {
-    pushLog(`AutomaticPresetSwitcher: ${message}`);
+    pushServiceLog("presetSwitcher", message);
   },
 });
 let lastStatusText = "ready";
@@ -247,6 +247,17 @@ interface MixerApp {
 
 type DdcMonitor = DdcMonitorPayload;
 
+type RuntimeServiceKey = "sonarApi" | "hidEvents" | "ddcApi" | "notifications" | "presetSwitcher" | "shortcuts";
+
+const SERVICE_LOG_LABELS: Record<RuntimeServiceKey, string> = {
+  sonarApi: "Sonar GG",
+  hidEvents: "HID Events",
+  ddcApi: "DDC",
+  notifications: "Notifications",
+  presetSwitcher: "Auto Preset Switcher",
+  shortcuts: "Shortcuts",
+};
+
 /**
  * Builds the full persisted snapshot payload from current in-memory state.
  */
@@ -345,6 +356,11 @@ function pushLog(text: string): void {
   }
 }
 
+function pushServiceLog(service: RuntimeServiceKey, text: string): void {
+  const label = SERVICE_LOG_LABELS[service];
+  pushLog(`[${label}] ${text}`);
+}
+
 function debugFlyout(text: string): void {
   if (!DEBUG_FLYOUT) {
     return;
@@ -366,6 +382,24 @@ function normalizeError(err: unknown): string {
   return String(err);
 }
 
+type ToggleServiceSettingKey =
+  | "sonarApiEnabled"
+  | "hidEventsEnabled"
+  | "ddcEnabled"
+  | "notificationsEnabled"
+  | "automaticPresetSwitcherEnabled"
+  | "shortcutsEnabled";
+
+function isServiceEnabled(key: ToggleServiceSettingKey): boolean {
+  return settings.services?.[key] !== false;
+}
+
+function sanitizeSonarPollIntervalMs(): number {
+  const raw = Number(settings.services?.sonarPollIntervalMs ?? DEFAULT_SETTINGS.services.sonarPollIntervalMs);
+  const rawSecondsMode = raw <= 120 ? raw * 1000 : raw;
+  return Math.max(500, Math.min(60_000, Math.round(rawSecondsMode)));
+}
+
 function getServiceStatusPayload(): ServiceStatusPayload {
   const ddcStatus = ddcService?.getStatus() ?? {
     state: "stopped",
@@ -374,28 +408,94 @@ function getServiceStatusPayload(): ServiceStatusPayload {
     managed: true,
     pid: null,
   };
-  let arctisState: ServiceStatusPayload["arctisApi"]["state"] = "starting";
-  if (!backend) {
-    arctisState = "stopped";
-  } else if (lastErrorText) {
-    arctisState = "error";
-  } else if (hasSeenLiveState) {
-    arctisState = "running";
-  }
-  const arctisDetail = lastErrorText || lastStatusText || (backend ? "Backend initialized." : "Backend not started.");
+  const backendStatus = backend?.getRuntimeStatus() ?? null;
 
-  let ddcState: ServiceStatusPayload["ddcApi"]["state"] = "starting";
-  let ddcDetail = ddcStatus.detail;
-  ddcState = ddcStatus.state;
+  const sonarEnabled = isServiceEnabled("sonarApiEnabled");
+  const hidEnabled = isServiceEnabled("hidEventsEnabled");
+  const ddcEnabled = isServiceEnabled("ddcEnabled");
+  const notificationsEnabled = isServiceEnabled("notificationsEnabled");
+  const presetEnabled = isServiceEnabled("automaticPresetSwitcherEnabled");
+  const shortcutsEnabled = isServiceEnabled("shortcutsEnabled");
+
+  const sonarState: ServiceStatusPayload["sonarApi"]["state"] = !sonarEnabled
+    ? "stopped"
+    : backendStatus?.sonarPollingActive
+      ? "running"
+      : backendStatus?.lastError
+        ? "error"
+        : "starting";
+  const sonarDetail = !sonarEnabled
+    ? "Disabled in settings."
+    : backendStatus?.lastError || lastErrorText || (backendStatus?.sonarPollingActive ? "Polling active." : "Starting Sonar poller...");
+
+  const hidState: ServiceStatusPayload["hidEvents"]["state"] = !hidEnabled
+    ? "stopped"
+    : backendStatus?.hidListenerActive
+      ? "running"
+      : "starting";
+  const hidDetail = !hidEnabled
+    ? "Disabled in settings."
+    : backendStatus?.hidListenerActive
+      ? "Listening for base-station events."
+      : "Starting HID listener...";
+
+  const ddcState: ServiceStatusPayload["ddcApi"]["state"] = !ddcEnabled ? "stopped" : ddcStatus.state;
+  const ddcDetail = !ddcEnabled ? "Disabled in settings." : ddcStatus.detail;
+
+  const notificationsState: ServiceStatusPayload["notifications"]["state"] = notificationsEnabled ? "running" : "stopped";
+  const notificationsDetail = notificationsEnabled
+    ? "Notification subsystem active."
+    : "Disabled in settings.";
+
+  const presetState: ServiceStatusPayload["automaticPresetSwitcher"]["state"] = !presetEnabled
+    ? "stopped"
+    : presetSwitcherService.isRunning()
+      ? "running"
+      : "starting";
+  const presetDetail = !presetEnabled
+    ? "Disabled in settings."
+    : presetSwitcherService.isRunning()
+      ? "Watching active app and applying rules."
+      : "Starting active app watcher...";
+
+  const shortcutsState: ServiceStatusPayload["shortcuts"]["state"] = !shortcutsEnabled
+    ? "stopped"
+    : shortcutService.getRegisteredCount() > 0
+      ? "running"
+      : "starting";
+  const shortcutsDetail = !shortcutsEnabled
+    ? "Disabled in settings."
+    : `Registered bindings: ${shortcutService.getRegisteredCount()}.`;
 
   return {
-    arctisApi: { state: arctisState, detail: arctisDetail },
+    sonarApi: {
+      state: sonarState,
+      detail: sonarDetail,
+      endpoint: backendStatus?.sonarUrl ?? null,
+      pollIntervalMs: sanitizeSonarPollIntervalMs(),
+    },
+    hidEvents: {
+      state: hidState,
+      detail: hidDetail,
+    },
     ddcApi: {
       state: ddcState,
       detail: ddcDetail,
       endpoint: ddcStatus.endpoint,
       managed: ddcStatus.managed,
       pid: ddcStatus.pid,
+    },
+    notifications: {
+      state: notificationsState,
+      detail: notificationsDetail,
+    },
+    automaticPresetSwitcher: {
+      state: presetState,
+      detail: presetDetail,
+    },
+    shortcuts: {
+      state: shortcutsState,
+      detail: shortcutsDetail,
     },
   };
 }
@@ -413,16 +513,22 @@ async function isDdcApiHealthy(): Promise<boolean> {
 }
 
 async function ensureDdcApiRunning(): Promise<void> {
+  if (!isServiceEnabled("ddcEnabled")) {
+    return;
+  }
   ddcService?.start();
   if (ddcService?.isHealthy()) {
-    pushLog("DDC native service ready.");
+    pushServiceLog("ddcApi", "Native DDC service ready.");
   } else {
     const detail = ddcService?.getStatus().detail ?? "DDC native service unavailable.";
-    pushLog(`ERROR: ${detail}`);
+    pushServiceLog("ddcApi", `ERROR: ${detail}`);
   }
 }
 
 async function warmupDdcCache(): Promise<void> {
+  if (!isServiceEnabled("ddcEnabled")) {
+    return;
+  }
   await ensureDdcApiRunning();
   const maxAttempts = 5;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -430,19 +536,19 @@ async function warmupDdcCache(): Promise<void> {
       await fetchDdcMonitorsIfStale(true);
       ddcLastStatus = "ok";
       ddcLastFailure = "";
-      pushLog("DDC startup refresh completed.");
+      pushServiceLog("ddcApi", "Startup refresh completed.");
       return;
     } catch (err) {
       const detail = normalizeError(err);
       ddcLastStatus = "error";
       ddcLastFailure = detail;
       if (attempt === 1 || attempt % 3 === 0 || attempt === maxAttempts) {
-        pushLog(`DDC startup refresh retry ${attempt}/${maxAttempts}: ${detail}`);
+        pushServiceLog("ddcApi", `Startup refresh retry ${attempt}/${maxAttempts}: ${detail}`);
       }
       await sleep(5000);
     }
   }
-  pushLog("ERROR: DDC startup refresh failed after retries.");
+  pushServiceLog("ddcApi", "ERROR: Startup refresh failed after retries.");
 }
 
 async function stopManagedDdcApi(): Promise<void> {
@@ -463,6 +569,9 @@ function sanitizeOpenStaleThresholdMs(): number {
 }
 
 function refreshDdcMonitorsOnOpen(): void {
+  if (!isServiceEnabled("ddcEnabled")) {
+    return;
+  }
   const thresholdMs = sanitizeOpenStaleThresholdMs();
   const now = Date.now();
   const isStale = ddcMonitorsCache.length === 0 || now - ddcMonitorsCacheTs > thresholdMs;
@@ -495,6 +604,9 @@ function stopDdcMonitorRefresh(): void {
 
 function restartDdcMonitorRefresh(forceNow = false): void {
   stopDdcMonitorRefresh();
+  if (!isServiceEnabled("ddcEnabled")) {
+    return;
+  }
   const intervalMs = sanitizePollIntervalMs();
   if (intervalMs <= 0) {
     return;
@@ -510,12 +622,12 @@ function restartDdcMonitorRefresh(forceNow = false): void {
         if (ddcLastStatus !== "ok") {
           ddcLastStatus = "ok";
           ddcLastFailure = "";
-          pushLog(`DDC monitor polling active (${Math.round(intervalMs / 60_000)} min).`);
+          pushServiceLog("ddcApi", `Monitor polling active (${Math.round(intervalMs / 60_000)} min).`);
         }
       } catch (err) {
         const detail = normalizeError(err);
         if (ddcLastFailure !== detail || ddcLastStatus !== "error") {
-          pushLog(`ERROR: DDC poll failed: ${detail}`);
+          pushServiceLog("ddcApi", `ERROR: Poll failed: ${detail}`);
         }
         ddcLastStatus = "error";
         ddcLastFailure = detail;
@@ -530,6 +642,9 @@ function restartDdcMonitorRefresh(forceNow = false): void {
 }
 
 async function fetchDdcMonitorsIfStale(force = false): Promise<DdcMonitor[]> {
+  if (!isServiceEnabled("ddcEnabled")) {
+    throw new Error("DDC service disabled in settings.");
+  }
   const now = Date.now();
   if (!force && ddcMonitorsCache.length > 0 && now - ddcMonitorsCacheTs < sanitizePollIntervalMs()) {
     return ddcMonitorsCache;
@@ -548,7 +663,7 @@ async function fetchDdcMonitorsIfStale(force = false): Promise<DdcMonitor[]> {
 }
 
 function isNotifEnabled(key: keyof UiSettings["notifications"]): boolean {
-  return settings.notifications?.[key] !== false;
+  return isServiceEnabled("notificationsEnabled") && settings.notifications?.[key] !== false;
 }
 
 function isHeadsetChatMixEnabled(): boolean {
@@ -556,6 +671,10 @@ function isHeadsetChatMixEnabled(): boolean {
 }
 
 function showSystemNotification(title: string, body: string): void {
+  if (!isServiceEnabled("notificationsEnabled")) {
+    return;
+  }
+  pushServiceLog("notifications", `${title}: ${body}`);
   void notificationWindowService.showNotification(title, body);
 }
 
@@ -4068,6 +4187,107 @@ function toggleFlyout(): void {
   }
 }
 
+function applyRuntimeServiceSettings(previousSettings: UiSettings | null = null): void {
+  if (backend) {
+    backend.configureRuntime({
+      sonarEnabled: isServiceEnabled("sonarApiEnabled"),
+      hidEventsEnabled: isServiceEnabled("hidEventsEnabled"),
+      sonarPollIntervalMs: sanitizeSonarPollIntervalMs(),
+    });
+    if (isServiceEnabled("sonarApiEnabled") || isServiceEnabled("hidEventsEnabled")) {
+      backend.start();
+      if (isServiceEnabled("sonarApiEnabled")) {
+        void backend.refreshNow();
+      }
+    } else {
+      backend.stop();
+    }
+  }
+
+  if (ddcService) {
+    if (isServiceEnabled("ddcEnabled")) {
+      ddcService.start();
+      restartDdcMonitorRefresh(true);
+      void warmupDdcCache();
+    } else {
+      stopDdcMonitorRefresh();
+      ddcService.stop();
+      ddcLastStatus = "unknown";
+      ddcLastFailure = "";
+    }
+  }
+
+  if (isServiceEnabled("automaticPresetSwitcherEnabled")) {
+    presetSwitcherService.start();
+  } else {
+    presetSwitcherService.stop();
+  }
+
+  if (isServiceEnabled("shortcutsEnabled")) {
+    registerConfiguredShortcuts();
+  } else {
+    shortcutService.unregisterAll();
+  }
+
+  if (!isServiceEnabled("notificationsEnabled")) {
+    notificationWindowService.closeAll();
+    closeWindowIfOpen(headsetVolumeNotificationWindow);
+    closeWindowIfOpen(micMuteNotificationWindow);
+    closeWindowIfOpen(oledNotificationWindow);
+    closeWindowIfOpen(sidetoneNotificationWindow);
+    closeWindowIfOpen(presetChangeNotificationWindow);
+    closeWindowIfOpen(usbInputNotificationWindow);
+    closeWindowIfOpen(ancModeNotificationWindow);
+    closeWindowIfOpen(connectivityNotificationWindow);
+    closeWindowIfOpen(batteryLowNotificationWindow);
+    closeWindowIfOpen(baseBatteryStatusNotificationWindow);
+    closeWindowIfOpen(headsetBatterySwapNotificationWindow);
+    clearNotificationTimers();
+    resetNotificationTransientState();
+  }
+
+  if (!previousSettings) {
+    pushServiceLog(
+      "sonarApi",
+      isServiceEnabled("sonarApiEnabled")
+        ? `started (poll: ${Math.round(sanitizeSonarPollIntervalMs() / 100) / 10}s).`
+        : "stopped.",
+    );
+    pushServiceLog("hidEvents", isServiceEnabled("hidEventsEnabled") ? "started." : "stopped.");
+    pushServiceLog("ddcApi", isServiceEnabled("ddcEnabled") ? "started." : "stopped.");
+    pushServiceLog("notifications", isServiceEnabled("notificationsEnabled") ? "started." : "stopped.");
+    pushServiceLog(
+      "presetSwitcher",
+      isServiceEnabled("automaticPresetSwitcherEnabled") ? "started." : "stopped.",
+    );
+    pushServiceLog("shortcuts", isServiceEnabled("shortcutsEnabled") ? "started." : "stopped.");
+    return;
+  }
+
+  const prev = previousSettings.services;
+  const next = settings.services;
+  if (prev.sonarApiEnabled !== next.sonarApiEnabled || prev.sonarPollIntervalMs !== next.sonarPollIntervalMs) {
+    const status = next.sonarApiEnabled ? "started" : "stopped";
+    const period = `${Math.round(sanitizeSonarPollIntervalMs() / 100) / 10}s`;
+    pushServiceLog("sonarApi", `${status} (poll: ${period}).`);
+  }
+  if (prev.hidEventsEnabled !== next.hidEventsEnabled) {
+    pushServiceLog("hidEvents", next.hidEventsEnabled ? "started." : "stopped.");
+  }
+  if (prev.ddcEnabled !== next.ddcEnabled) {
+    pushServiceLog("ddcApi", next.ddcEnabled ? "started." : "stopped.");
+  }
+  if (prev.notificationsEnabled !== next.notificationsEnabled) {
+    pushServiceLog("notifications", next.notificationsEnabled ? "started." : "stopped.");
+  }
+  if (prev.automaticPresetSwitcherEnabled !== next.automaticPresetSwitcherEnabled) {
+    pushServiceLog("presetSwitcher", next.automaticPresetSwitcherEnabled ? "started." : "stopped.");
+  }
+  if (prev.shortcutsEnabled !== next.shortcutsEnabled) {
+    pushServiceLog("shortcuts", next.shortcutsEnabled ? "started." : "stopped.");
+  }
+}
+
 /**
  * Loads persisted settings and applies state-level normalization.
  */
@@ -4213,6 +4433,10 @@ function patchDdcMonitorCache(monitor: DdcMonitor): void {
 function executeShortcutBinding(binding: ShortcutBinding): void {
   const action = binding.action;
   if (action === "sonar_volume_up" || action === "sonar_volume_down") {
+    if (!isServiceEnabled("sonarApiEnabled")) {
+      pushServiceLog("shortcuts", `Ignored (${binding.accelerator}): Sonar service disabled.`);
+      return;
+    }
     const channel = resolveShortcutChannel(binding);
     const step = Math.max(1, Math.min(50, Number(binding.step) || 5));
     const delta = action === "sonar_volume_up" ? step : -step;
@@ -4231,6 +4455,10 @@ function executeShortcutBinding(binding: ShortcutBinding): void {
     return;
   }
   if (action === "sonar_mute_toggle" || action === "sonar_mute_on" || action === "sonar_mute_off") {
+    if (!isServiceEnabled("sonarApiEnabled")) {
+      pushServiceLog("shortcuts", `Ignored (${binding.accelerator}): Sonar service disabled.`);
+      return;
+    }
     const channel = resolveShortcutChannel(binding);
     const current = Boolean(cachedState.channel_mute?.[channel]);
     const nextMuted = action === "sonar_mute_toggle" ? !current : action === "sonar_mute_on";
@@ -4247,10 +4475,14 @@ function executeShortcutBinding(binding: ShortcutBinding): void {
     return;
   }
   if (action === "sonar_set_preset") {
+    if (!isServiceEnabled("sonarApiEnabled")) {
+      pushServiceLog("shortcuts", `Ignored (${binding.accelerator}): Sonar service disabled.`);
+      return;
+    }
     const channel = resolveShortcutChannel(binding);
     const presetId = String(binding.presetId ?? "").trim();
     if (!presetId) {
-      pushLog(`Shortcut ignored (${binding.accelerator}): missing preset.`);
+      pushServiceLog("shortcuts", `Ignored (${binding.accelerator}): missing preset.`);
       return;
     }
     backend?.send({
@@ -4269,13 +4501,13 @@ function executeShortcutBinding(binding: ShortcutBinding): void {
     return;
   }
   if (action === "ddc_brightness_up" || action === "ddc_brightness_down" || action === "ddc_brightness_set") {
-    if (!ddcService) {
-      pushLog("Shortcut ignored: DDC service unavailable.");
+    if (!isServiceEnabled("ddcEnabled") || !ddcService) {
+      pushServiceLog("shortcuts", "Ignored: DDC service unavailable.");
       return;
     }
     const monitorId = resolveShortcutMonitorId(binding);
     if (!monitorId) {
-      pushLog("Shortcut ignored: no DDC monitor available.");
+      pushServiceLog("shortcuts", "Ignored: no DDC monitor available.");
       return;
     }
     const current = ddcMonitorsCache.find((item) => item.monitor_id === monitorId)?.brightness;
@@ -4287,29 +4519,29 @@ function executeShortcutBinding(binding: ShortcutBinding): void {
     try {
       const monitor = ddcService.setBrightness(monitorId, next) as DdcMonitor;
       patchDdcMonitorCache(monitor);
-      pushLog(`Shortcut: monitor ${monitorId} brightness ${next}%.`);
+      pushServiceLog("shortcuts", `Monitor ${monitorId} brightness ${next}%.`);
     } catch (err) {
-      pushLog(`ERROR: Shortcut brightness failed for monitor ${monitorId}: ${normalizeError(err)}`);
+      pushServiceLog("shortcuts", `ERROR: Brightness failed for monitor ${monitorId}: ${normalizeError(err)}`);
     }
     return;
   }
   if (action === "ddc_input_set") {
-    if (!ddcService) {
-      pushLog("Shortcut ignored: DDC service unavailable.");
+    if (!isServiceEnabled("ddcEnabled") || !ddcService) {
+      pushServiceLog("shortcuts", "Ignored: DDC service unavailable.");
       return;
     }
     const monitorId = resolveShortcutMonitorId(binding);
     const inputSource = String(binding.inputSource ?? "").trim();
     if (!monitorId || !inputSource) {
-      pushLog(`Shortcut ignored (${binding.accelerator}): missing monitor or input source.`);
+      pushServiceLog("shortcuts", `Ignored (${binding.accelerator}): missing monitor or input source.`);
       return;
     }
     try {
       const monitor = ddcService.setInputSource(monitorId, inputSource) as DdcMonitor;
       patchDdcMonitorCache(monitor);
-      pushLog(`Shortcut: monitor ${monitorId} input ${inputSource}.`);
+      pushServiceLog("shortcuts", `Monitor ${monitorId} input ${inputSource}.`);
     } catch (err) {
-      pushLog(`ERROR: Shortcut input change failed for monitor ${monitorId}: ${normalizeError(err)}`);
+      pushServiceLog("shortcuts", `ERROR: Input change failed for monitor ${monitorId}: ${normalizeError(err)}`);
     }
   }
 }
@@ -4394,6 +4626,9 @@ function wireBackend(): void {
   if (!backend) {
     return;
   }
+  backend.on("hid-status", (text: string) => {
+    pushServiceLog("hidEvents", text);
+  });
   backend.on("state", (state: AppState) => {
     const previous = cachedState;
     cachedState = applyUsbInputInference(harmonizeLiveState(cachedState, state));
@@ -4417,7 +4652,7 @@ function wireBackend(): void {
   backend.on("status", (text: string) => {
     lastStatusText = text;
     lastErrorText = null;
-    pushLog(text);
+    pushServiceLog("sonarApi", text);
     if (isNotifEnabled("appInfo")) {
       const lower = text.toLowerCase();
       if (lower.includes("starting backend") || lower.includes("backend exited") || lower.includes("ready")) {
@@ -4432,7 +4667,7 @@ function wireBackend(): void {
   backend.on("error", (text: string) => {
     lastErrorText = text;
     lastStatusText = text;
-    pushLog(`ERROR: ${text}`);
+    pushServiceLog("sonarApi", `ERROR: ${text}`);
     if (isNotifEnabled("appInfo")) {
       showSystemNotification("Control Centre Error", text);
     }
@@ -4441,7 +4676,6 @@ function wireBackend(): void {
       win.webContents.send(IPC_EVENT.BACKEND_ERROR, text);
     }
   });
-  backend.start();
 }
 
 function closeWindowIfOpen(win: BrowserWindow | null): void {
@@ -4509,9 +4743,9 @@ function wireIpc(): void {
   const setSettingsHandler = createSettingsIpcHandler({
     getSettings: () => settings,
     persistSettings: (next) => persistSettings(next),
+    applyRuntimeServiceSettings: (previous, _next) => applyRuntimeServiceSettings(previous),
     setPresetRules: (rules) => presetSwitcherService.setRules(rules),
     restartDdcMonitorRefresh: () => restartDdcMonitorRefresh(),
-    registerConfiguredShortcuts: () => registerConfiguredShortcuts(),
     onFlyoutSettingsChanged: () => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         applyFlyoutSizeFromSettings();
@@ -4728,6 +4962,10 @@ async function showSettingsWindow(): Promise<void> {
 }
 
 function registerConfiguredShortcuts(): void {
+  if (!isServiceEnabled("shortcutsEnabled")) {
+    shortcutService.unregisterAll();
+    return;
+  }
   const entries = [
     {
       id: "app-toggle-flyout",
@@ -4745,11 +4983,12 @@ function registerConfiguredShortcuts(): void {
   const result = shortcutService.register(entries);
   if (result.errors.length > 0) {
     for (const error of result.errors) {
-      pushLog(`ERROR: ${error}`);
+      pushServiceLog("shortcuts", `ERROR: ${error}`);
       mainWindow?.webContents.send(IPC_EVENT.BACKEND_ERROR, error);
     }
     return;
   }
+  pushServiceLog("shortcuts", `Registered bindings: ${result.registered}.`);
   mainWindow?.webContents.send(IPC_EVENT.BACKEND_STATUS, `Shortcuts registered: ${result.registered}`);
 }
 
@@ -4761,14 +5000,10 @@ async function createApp(): Promise<void> {
   migrateLegacyState();
   backend = new ArctisApiService();
   ddcService = new DdcApiService();
-  ddcService.start();
   wireIpc();
   wireBackend();
-  void backend.refreshNow();
-  void warmupDdcCache();
-  restartDdcMonitorRefresh(true);
   presetSwitcherService.setRules(settings.automaticPresetRules);
-  presetSwitcherService.start();
+  applyRuntimeServiceSettings(null);
 
   mainWindow = createFlyoutWindow(settings);
   mainWindow.on("close", (evt) => {
@@ -4844,7 +5079,6 @@ async function createApp(): Promise<void> {
     }
   });
 
-  registerConfiguredShortcuts();
   // Preload settings once so first open is instant and fully painted.
   void ensureSettingsWindow();
   if (isNotifEnabled("appInfo")) {

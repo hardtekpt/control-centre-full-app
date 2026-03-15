@@ -62,6 +62,10 @@ export class PresetSwitcherService {
     }
   }
 
+  public isRunning(): boolean {
+    return Boolean(this.pollTimer);
+  }
+
   public setRules(next: AutomaticPresetRule[]): void {
     this.rules = next ?? [];
     this.lastAppliedByChannel = {};

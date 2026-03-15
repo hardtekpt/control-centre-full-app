@@ -60,6 +60,15 @@ export interface UiSettings {
   visibleChannels: ChannelKey[];
   notifications: Record<NotificationKey, boolean>;
   automaticPresetRules: AutomaticPresetRule[];
+  services: {
+    sonarApiEnabled: boolean;
+    hidEventsEnabled: boolean;
+    ddcEnabled: boolean;
+    notificationsEnabled: boolean;
+    automaticPresetSwitcherEnabled: boolean;
+    shortcutsEnabled: boolean;
+    sonarPollIntervalMs: number;
+  };
   ddc: {
     apiBaseUrl: string;
     pollIntervalMs: number;

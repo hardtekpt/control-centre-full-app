@@ -46,7 +46,13 @@ export interface ThemePayload {
 }
 
 export interface ServiceStatusPayload {
-  arctisApi: {
+  sonarApi: {
+    state: ServiceLifecycleState;
+    detail: string;
+    endpoint: string | null;
+    pollIntervalMs: number;
+  };
+  hidEvents: {
     state: ServiceLifecycleState;
     detail: string;
   };
@@ -56,6 +62,18 @@ export interface ServiceStatusPayload {
     endpoint: string;
     managed: boolean;
     pid: number | null;
+  };
+  notifications: {
+    state: ServiceLifecycleState;
+    detail: string;
+  };
+  automaticPresetSwitcher: {
+    state: ServiceLifecycleState;
+    detail: string;
+  };
+  shortcuts: {
+    state: ServiceLifecycleState;
+    detail: string;
   };
 }
 
