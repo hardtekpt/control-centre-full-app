@@ -17,7 +17,6 @@ import { DEFAULT_SETTINGS, mergeSettings, mergeState } from "../shared/settings.
 import {
   CHANNELS,
   type AppState,
-  type BackendCommand,
   type ChannelKey,
   type PresetMap,
   type ShortcutBinding,
@@ -25,11 +24,14 @@ import {
 } from "../shared/types";
 import {
   IPC_EVENT,
-  IPC_INVOKE,
-  IPC_SEND,
   type DdcMonitorPayload,
   type ServiceStatusPayload,
 } from "../shared/ipc";
+import { registerCoreIpcHandlers } from "./ipc/registerCoreHandlers";
+import { createSettingsIpcHandler } from "./ipc/settingsHandlers";
+import { createMixerIpcHandlers } from "./ipc/mixerHandlers";
+import * as ddcHandlersModule from "./ipc/ddcHandlers";
+import type { CreateDdcIpcHandlersDeps, DdcIpcHandlers } from "./ipc/ddcHandlers";
 
 let mainWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
@@ -355,35 +357,11 @@ function broadcastDdcUpdate(): void {
 
 function pushLog(text: string): void {
   const line = `${new Date().toLocaleTimeString()}  ${text}`;
-  if (!app.isPackaged) {
-    console.log(line);
-  }
   logBuffer = [line, ...logBuffer].slice(0, 200);
   for (const win of allWindows()) {
     if (!win.isDestroyed()) {
       win.webContents.send(IPC_EVENT.APP_LOG, line);
     }
-  }
-}
-
-function attachRendererDiagnostics(win: BrowserWindow, label: "flyout" | "settings"): void {
-  win.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
-    pushLog(`[ERROR][${label}] did-fail-load code=${errorCode} desc=${errorDescription} url=${validatedURL}`);
-  });
-  win.webContents.on("preload-error", (_event, preloadPath, error) => {
-    pushLog(`[ERROR][${label}] preload-error path=${preloadPath} detail=${normalizeError(error)}`);
-  });
-  if (!app.isPackaged) {
-    win.webContents.on("console-message", (_event, level, message) => {
-      if (level < 2) {
-        return;
-      }
-      const normalized = String(message ?? "").trim();
-      if (!normalized) {
-        return;
-      }
-      pushLog(`[${label}][console:${level}] ${normalized}`);
-    });
   }
 }
 
@@ -4567,12 +4545,162 @@ function wireBackend(): void {
   backend.start();
 }
 
+function closeWindowIfOpen(win: BrowserWindow | null): void {
+  if (win && !win.isDestroyed()) {
+    win.close();
+  }
+}
+
+function syncHeadsetVolumeNotificationFromSettings(next: UiSettings, state: AppState): void {
+  if (
+    next.notifications.headsetVolume === false ||
+    !headsetVolumeNotificationWindow ||
+    headsetVolumeNotificationWindow.isDestroyed()
+  ) {
+    return;
+  }
+  const showChatMix = next.notifications.headsetChatMix !== false;
+  const layout = resolveHeadsetVolumeOsdLayout(showChatMix);
+  headsetVolumeOsdLayout = layout;
+  applyHeadsetVolumeOsdLayout(headsetVolumeNotificationWindow, layout);
+  updateHeadsetVolumeNotificationUi(
+    headsetVolumeNotificationWindow,
+    headsetVolumePendingValue ?? toNullablePercent(state.headset_volume_percent),
+    headsetChatMixPendingValue ?? toNullablePercent(state.chat_mix_balance),
+    showChatMix,
+  );
+}
+
+/**
+ * Resolves the DDC IPC handler factory from the compiled module.
+ * This prevents startup crashes if the dev watcher momentarily serves a mixed CJS/ESM export shape.
+ */
+function resolveCreateDdcIpcHandlers(): (deps: CreateDdcIpcHandlersDeps) => DdcIpcHandlers {
+  const maybeModule = ddcHandlersModule as unknown as {
+    createDdcIpcHandlers?: unknown;
+    default?: unknown;
+  };
+
+  if (typeof maybeModule.createDdcIpcHandlers === "function") {
+    return maybeModule.createDdcIpcHandlers as (deps: CreateDdcIpcHandlersDeps) => DdcIpcHandlers;
+  }
+
+  if (typeof maybeModule.default === "function") {
+    return maybeModule.default as (deps: CreateDdcIpcHandlersDeps) => DdcIpcHandlers;
+  }
+
+  if (
+    maybeModule.default &&
+    typeof maybeModule.default === "object" &&
+    typeof (maybeModule.default as { createDdcIpcHandlers?: unknown }).createDdcIpcHandlers === "function"
+  ) {
+    return (maybeModule.default as { createDdcIpcHandlers: (deps: CreateDdcIpcHandlersDeps) => DdcIpcHandlers })
+      .createDdcIpcHandlers;
+  }
+
+  const keys = Object.keys(maybeModule).join(", ") || "none";
+  throw new Error(`Invalid ddcHandlers export shape. Expected createDdcIpcHandlers function, found keys: ${keys}`);
+}
+
 function wireIpc(): void {
   if (!backend) {
     return;
   }
-  ipcMain.handle(IPC_INVOKE.APP_GET_INITIAL, async () => {
-    return {
+
+  const setSettingsHandler = createSettingsIpcHandler({
+    getSettings: () => settings,
+    persistSettings: (next) => persistSettings(next),
+    setPresetRules: (rules) => presetSwitcherService.setRules(rules),
+    restartDdcMonitorRefresh: () => restartDdcMonitorRefresh(),
+    registerConfiguredShortcuts: () => registerConfiguredShortcuts(),
+    onFlyoutSettingsChanged: () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        applyFlyoutSizeFromSettings();
+        positionBottomRight(mainWindow, resolveUiDisplay());
+      }
+    },
+    getNotificationWindows: () => ({
+      headsetVolume: headsetVolumeNotificationWindow,
+      micMute: micMuteNotificationWindow,
+      oled: oledNotificationWindow,
+      sidetone: sidetoneNotificationWindow,
+      presetChange: presetChangeNotificationWindow,
+      usbInput: usbInputNotificationWindow,
+      ancMode: ancModeNotificationWindow,
+      connectivity: connectivityNotificationWindow,
+      batteryLow: batteryLowNotificationWindow,
+      baseBatteryStatus: baseBatteryStatusNotificationWindow,
+      headsetBatterySwap: headsetBatterySwapNotificationWindow,
+    }),
+    closeWindowIfOpen,
+    syncHeadsetVolumeNotification: syncHeadsetVolumeNotificationFromSettings,
+    clearHeadsetBatterySwapDelayTimer: () => clearHeadsetBatterySwapDelayTimer(),
+    resetBatterySwapTrack: () => resetBatterySwapTrack(),
+    getCachedState: () => cachedState,
+    setCachedState: (state) => {
+      cachedState = state;
+    },
+    applyUsbInputInference: (state) => applyUsbInputInference(state),
+    schedulePersist: () => schedulePersist(),
+    broadcastState: (state) => {
+      for (const win of allWindows()) {
+        win.webContents.send(IPC_EVENT.BACKEND_STATE, state);
+      }
+    },
+    broadcastSettings: (next) => {
+      for (const win of allWindows()) {
+        win.webContents.send(IPC_EVENT.SETTINGS_UPDATE, next);
+      }
+    },
+  });
+
+  const mixerHandlers = createMixerIpcHandlers({
+    getMixerOutputs: () => getMixerOutputs(),
+    getMixerApps: () => getMixerApps(),
+    getSelectedOutputId: () => mixerOutputId,
+    setSelectedOutputId: (outputId) => {
+      mixerOutputId = outputId;
+    },
+    setAppVolume: (appId, volume) => {
+      mixerAppVolume[appId] = volume;
+    },
+    setAppMuted: (appId, muted) => {
+      mixerAppMuted[appId] = muted;
+    },
+    clampPercent: (value) => clampPercent(value),
+    schedulePersist: () => schedulePersist(),
+  });
+
+  const ddcHandlers = resolveCreateDdcIpcHandlers()({
+    fetchDdcMonitorsIfStale: (force) => fetchDdcMonitorsIfStale(force),
+    getDdcService: () => ddcService,
+    getMonitorsCache: () => ddcMonitorsCache,
+    setMonitorsCache: (monitors) => {
+      ddcMonitorsCache = monitors;
+    },
+    getMonitorsCacheTs: () => ddcMonitorsCacheTs,
+    setMonitorsCacheTs: (timestamp) => {
+      ddcMonitorsCacheTs = timestamp;
+    },
+    getLastStatus: () => ddcLastStatus,
+    setLastStatus: (status) => {
+      ddcLastStatus = status;
+    },
+    getLastFailure: () => ddcLastFailure,
+    setLastFailure: (detail) => {
+      ddcLastFailure = detail;
+    },
+    clampPercent: (value) => clampPercent(value),
+    broadcastDdcUpdate: () => broadcastDdcUpdate(),
+    pushLog: (text) => pushLog(text),
+    normalizeError: (error) => normalizeError(error),
+    debugDdc: (text) => debugDdc(text),
+    ddcBaseUrl: () => ddcBaseUrl(),
+  });
+
+  registerCoreIpcHandlers({
+    ipcMain,
+    getInitialPayload: async () => ({
       state: cachedState,
       presets: cachedPresets,
       settings,
@@ -4585,283 +4713,93 @@ function wireIpc(): void {
       ddcMonitorsUpdatedAt: ddcMonitorsCacheTs || null,
       flyoutPinned,
       serviceStatus: getServiceStatusPayload(),
-    };
-  });
-  ipcMain.handle(IPC_INVOKE.WINDOW_SET_PINNED, (_evt, pinned: boolean) => {
-    flyoutPinned = Boolean(pinned);
-    schedulePersist();
-    return { ok: true, pinned: flyoutPinned };
-  });
-  ipcMain.handle(IPC_INVOKE.SERVICES_GET_STATUS, async () => getServiceStatusPayload());
-  ipcMain.on(IPC_SEND.BACKEND_COMMAND, (_evt, cmd: BackendCommand) => backend!.send(cmd));
-  ipcMain.on(IPC_SEND.NOTIFICATION_HEADSET_VOLUME_PREVIEW, (_evt, payload: unknown) => {
-    const volume = toNullablePercent(typeof payload === "number" ? payload : Number(payload));
-    if (volume == null || !isNotifEnabled("headsetVolume")) {
-      return;
-    }
-    void showHeadsetVolumeNotification({ volume });
-  });
-  ipcMain.on(IPC_SEND.WINDOW_OPEN_SETTINGS, () => {
-    void showSettingsWindow();
-  });
-  ipcMain.on(IPC_SEND.WINDOW_CLOSE_CURRENT, (evt) => {
-    const win = BrowserWindow.fromWebContents(evt.sender);
-    if (!win) {
-      return;
-    }
-    if (win === mainWindow) {
-      hideFlyout("ipc-close-current");
-      return;
-    }
-    win.close();
-  });
-  ipcMain.on(IPC_SEND.WINDOW_FIT_CONTENT, (evt, payload: { width?: number; height?: number }) => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      return;
-    }
-    if (evt.sender !== mainWindow.webContents) {
-      return;
-    }
-    const width = Number(payload?.width);
-    const height = Number(payload?.height);
-    if (!Number.isFinite(width) || !Number.isFinite(height)) {
-      return;
-    }
-    fitFlyoutToContent(width, height);
-  });
-  ipcMain.handle(IPC_INVOKE.SETTINGS_SET, (_evt, partial: Partial<UiSettings>) => {
-    const next = persistSettings({
-      ...settings,
-      ...partial,
-      notifications: {
-        ...settings.notifications,
-        ...(partial.notifications ?? {}),
-      },
-      ddc: {
-        ...settings.ddc,
-        ...(partial.ddc ?? {}),
-        monitorPrefs: {
-          ...settings.ddc.monitorPrefs,
-          ...(partial.ddc?.monitorPrefs ?? {}),
-        },
-      },
-    });
-    if (next.automaticPresetRules !== settings.automaticPresetRules) {
-      presetSwitcherService.setRules(next.automaticPresetRules);
-    }
-    if (partial.ddc?.pollIntervalMs !== undefined && Number(partial.ddc?.pollIntervalMs) !== settings.ddc.pollIntervalMs) {
-      restartDdcMonitorRefresh();
-    } else if (partial.ddc) {
-      restartDdcMonitorRefresh();
-    }
-    registerConfiguredShortcuts();
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      applyFlyoutSizeFromSettings();
-      positionBottomRight(mainWindow, resolveUiDisplay());
-    }
-    if (next.notifications.headsetVolume === false && headsetVolumeNotificationWindow && !headsetVolumeNotificationWindow.isDestroyed()) {
-      headsetVolumeNotificationWindow.close();
-    }
-    if (
-      next.notifications.headsetVolume !== false &&
-      headsetVolumeNotificationWindow &&
-      !headsetVolumeNotificationWindow.isDestroyed()
-    ) {
-      const showChatMix = next.notifications.headsetChatMix !== false;
-      const layout = resolveHeadsetVolumeOsdLayout(showChatMix);
-      headsetVolumeOsdLayout = layout;
-      applyHeadsetVolumeOsdLayout(headsetVolumeNotificationWindow, layout);
-      updateHeadsetVolumeNotificationUi(
-        headsetVolumeNotificationWindow,
-        headsetVolumePendingValue ?? toNullablePercent(cachedState.headset_volume_percent),
-        headsetChatMixPendingValue ?? toNullablePercent(cachedState.chat_mix_balance),
-        showChatMix,
-      );
-    }
-    if (next.notifications.micMute === false && micMuteNotificationWindow && !micMuteNotificationWindow.isDestroyed()) {
-      micMuteNotificationWindow.close();
-    }
-    if (next.notifications.oled === false && oledNotificationWindow && !oledNotificationWindow.isDestroyed()) {
-      oledNotificationWindow.close();
-    }
-    if (next.notifications.sidetone === false && sidetoneNotificationWindow && !sidetoneNotificationWindow.isDestroyed()) {
-      sidetoneNotificationWindow.close();
-    }
-    if (next.notifications.presetChange === false && presetChangeNotificationWindow && !presetChangeNotificationWindow.isDestroyed()) {
-      presetChangeNotificationWindow.close();
-    }
-    if (next.notifications.usbInput === false && usbInputNotificationWindow && !usbInputNotificationWindow.isDestroyed()) {
-      usbInputNotificationWindow.close();
-    }
-    if (next.notifications.ancMode === false && ancModeNotificationWindow && !ancModeNotificationWindow.isDestroyed()) {
-      ancModeNotificationWindow.close();
-    }
-    if (next.notifications.connectivity === false && connectivityNotificationWindow && !connectivityNotificationWindow.isDestroyed()) {
-      connectivityNotificationWindow.close();
-    }
-    if (next.notifications.battery === false && batteryLowNotificationWindow && !batteryLowNotificationWindow.isDestroyed()) {
-      batteryLowNotificationWindow.close();
-    }
-    if (next.notifications.battery === false && baseBatteryStatusNotificationWindow && !baseBatteryStatusNotificationWindow.isDestroyed()) {
-      baseBatteryStatusNotificationWindow.close();
-    }
-    if (next.notifications.battery === false && headsetBatterySwapNotificationWindow && !headsetBatterySwapNotificationWindow.isDestroyed()) {
-      headsetBatterySwapNotificationWindow.close();
-    }
-    if (next.notifications.battery === false) {
-      clearHeadsetBatterySwapDelayTimer();
-      resetBatterySwapTrack();
-    }
-    const inferredState = applyUsbInputInference(cachedState);
-    if (inferredState !== cachedState) {
-      cachedState = inferredState;
+    }),
+    setFlyoutPinned: (pinned: boolean) => {
+      flyoutPinned = Boolean(pinned);
       schedulePersist();
-      for (const win of allWindows()) {
-        win.webContents.send(IPC_EVENT.BACKEND_STATE, cachedState);
+      return { ok: true, pinned: flyoutPinned };
+    },
+    getServiceStatus: () => getServiceStatusPayload(),
+    sendBackendCommand: (command) => backend!.send(command),
+    previewHeadsetVolume: (payload) => {
+      const volume = toNullablePercent(typeof payload === "number" ? payload : Number(payload));
+      if (volume == null || !isNotifEnabled("headsetVolume")) {
+        return;
       }
-    }
-    for (const win of allWindows()) {
-      win.webContents.send(IPC_EVENT.SETTINGS_UPDATE, next);
-    }
-    return next;
-  });
-  ipcMain.handle(IPC_INVOKE.APP_OPEN_GG, async () => {
-    const candidates = [
-      "C:\\Program Files\\SteelSeries\\GG\\SteelSeriesGGClient.exe",
-      "C:\\Program Files\\SteelSeries\\GG\\SteelSeriesGG.exe",
-      "C:\\Program Files (x86)\\SteelSeries\\GG\\SteelSeriesGG.exe",
-    ];
-    for (const exe of candidates) {
-      if (fs.existsSync(exe)) {
-        const result = await shell.openPath(exe);
-        return { ok: result === "", detail: result || exe };
+      void showHeadsetVolumeNotification({ volume });
+    },
+    openSettingsWindow: () => {
+      void showSettingsWindow();
+    },
+    closeCurrentWindow: (event) => {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (!win) {
+        return;
       }
-    }
-    const uriResult = await shell.openExternal("steelseriesgg://", { activate: true });
-    return { ok: uriResult, detail: "steelseriesgg://" };
-  });
-  ipcMain.handle(IPC_INVOKE.APP_NOTIFY_CUSTOM, async (_evt, payload: { title?: string; body?: string }) => {
-    const title = String(payload?.title || "").trim() || "Control Centre";
-    const body = String(payload?.body || "").trim() || "Notification";
-    showSystemNotification(title, body);
-    return { ok: true };
-  });
-  ipcMain.handle(IPC_INVOKE.APP_NOTIFY_BATTERY_LOW_TEST, async () => {
-    const threshold = clampPercent(settings.batteryLowThreshold);
-    const level = toNullablePercent(cachedState.headset_battery_percent) ?? Math.max(0, threshold - 1);
-    await showBatteryLowNotification({ battery: level, threshold });
-    return { ok: true };
-  });
-  ipcMain.handle(IPC_INVOKE.APP_NOTIFY_BATTERY_SWAP_TEST, async () => {
-    const level = toNullablePercent(cachedState.headset_battery_percent) ?? 74;
-    await showHeadsetBatterySwapNotification({ headsetBattery: level });
-    return { ok: true };
-  });
-  ipcMain.handle(IPC_INVOKE.MIXER_GET_DATA, async () => {
-    const outputs = await getMixerOutputs();
-    const selectedOutputId = mixerOutputId && outputs.some((o) => o.id === mixerOutputId) ? mixerOutputId : outputs[0]?.id ?? "default";
-    if (selectedOutputId !== mixerOutputId) {
-      mixerOutputId = selectedOutputId;
-      schedulePersist();
-    }
-    return { outputs, selectedOutputId, apps: getMixerApps() };
-  });
-  ipcMain.handle(IPC_INVOKE.MIXER_SET_OUTPUT, (_evt, outputId: string) => {
-    mixerOutputId = String(outputId || "").trim() || null;
-    schedulePersist();
-    return { ok: true };
-  });
-  ipcMain.handle(IPC_INVOKE.MIXER_SET_APP_VOLUME, (_evt, payload: { appId: string; volume: number }) => {
-    const appId = String(payload?.appId || "").trim();
-    if (!appId) {
-      return { ok: false };
-    }
-    mixerAppVolume[appId] = clampPercent(Number(payload.volume));
-    schedulePersist();
-    return { ok: true };
-  });
-  ipcMain.handle(IPC_INVOKE.MIXER_SET_APP_MUTE, (_evt, payload: { appId: string; muted: boolean }) => {
-    const appId = String(payload?.appId || "").trim();
-    if (!appId) {
-      return { ok: false };
-    }
-    mixerAppMuted[appId] = Boolean(payload.muted);
-    schedulePersist();
-    return { ok: true };
-  });
-  ipcMain.handle(IPC_INVOKE.DDC_GET_MONITORS, async () => {
-    debugDdc("ipc ddc:get-monitors begin");
-    try {
-      const monitors = await fetchDdcMonitorsIfStale(false);
-      debugDdc(`ipc ddc:get-monitors ok count=${monitors.length}`);
-      if (ddcLastStatus !== "ok") {
-        pushLog(`DDC backend reachable (${ddcBaseUrl()}).`);
+      if (win === mainWindow) {
+        hideFlyout("ipc-close-current");
+        return;
       }
-      ddcLastStatus = "ok";
-      ddcLastFailure = "";
-      return { ok: true, monitors, updatedAt: ddcMonitorsCacheTs || null };
-    } catch (err) {
-      const detail = normalizeError(err);
-      debugDdc(`ipc ddc:get-monitors error ${detail}`);
-      if (ddcLastFailure !== detail || ddcLastStatus !== "error") {
-        pushLog(`ERROR: DDC backend issue: ${detail}`);
+      win.close();
+    },
+    fitFlyoutToContent: (event, payload) => {
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return;
       }
-      ddcLastStatus = "error";
-      ddcLastFailure = detail;
-      return { ok: false, monitors: [], error: detail, updatedAt: ddcMonitorsCacheTs || null };
-    }
-  });
-  ipcMain.handle(IPC_INVOKE.DDC_SET_BRIGHTNESS, async (_evt, payload: { monitorId: number; value: number }) => {
-    const monitorId = Number(payload?.monitorId);
-    const value = clampPercent(Number(payload?.value));
-    debugDdc(`ipc ddc:set-brightness begin monitor=${monitorId} value=${value}`);
-    if (!Number.isFinite(monitorId) || monitorId < 1) {
-      debugDdc("ipc ddc:set-brightness rejected invalid monitor id");
-      return { ok: false, error: "Invalid monitor id." };
-    }
-    try {
-      if (!ddcService) {
-        throw new Error("DDC native service is not initialized.");
+      if (event.sender !== mainWindow.webContents) {
+        return;
       }
-      const monitor = ddcService.setBrightness(monitorId, value) as DdcMonitor;
-      ddcMonitorsCache = [...ddcMonitorsCache.filter((item) => item.monitor_id !== monitorId), monitor].sort((a, b) => a.monitor_id - b.monitor_id);
-      ddcMonitorsCacheTs = Date.now();
-      broadcastDdcUpdate();
-      pushLog(`DDC: monitor ${monitorId} brightness set to ${value}.`);
-      debugDdc(`ipc ddc:set-brightness ok monitor=${monitorId}`);
-      return { ok: true, monitor };
-    } catch (err) {
-      const detail = normalizeError(err);
-      debugDdc(`ipc ddc:set-brightness error monitor=${monitorId} ${detail}`);
-      pushLog(`ERROR: DDC set brightness failed for monitor ${monitorId}: ${detail}`);
-      return { ok: false, error: detail };
-    }
-  });
-  ipcMain.handle(IPC_INVOKE.DDC_SET_INPUT_SOURCE, async (_evt, payload: { monitorId: number; value: string }) => {
-    const monitorId = Number(payload?.monitorId);
-    const value = String(payload?.value ?? "").trim();
-    debugDdc(`ipc ddc:set-input-source begin monitor=${monitorId} value=${value}`);
-    if (!Number.isFinite(monitorId) || monitorId < 1 || !value) {
-      debugDdc("ipc ddc:set-input-source rejected invalid payload");
-      return { ok: false, error: "Invalid monitor id or input value." };
-    }
-    try {
-      if (!ddcService) {
-        throw new Error("DDC native service is not initialized.");
+      const width = Number(payload?.width);
+      const height = Number(payload?.height);
+      if (!Number.isFinite(width) || !Number.isFinite(height)) {
+        return;
       }
-      const monitor = ddcService.setInputSource(monitorId, value) as DdcMonitor;
-      ddcMonitorsCache = [...ddcMonitorsCache.filter((item) => item.monitor_id !== monitorId), monitor].sort((a, b) => a.monitor_id - b.monitor_id);
-      ddcMonitorsCacheTs = Date.now();
-      broadcastDdcUpdate();
-      pushLog(`DDC: monitor ${monitorId} input set to ${value}.`);
-      debugDdc(`ipc ddc:set-input-source ok monitor=${monitorId}`);
-      return { ok: true, monitor };
-    } catch (err) {
-      const detail = normalizeError(err);
-      debugDdc(`ipc ddc:set-input-source error monitor=${monitorId} ${detail}`);
-      pushLog(`ERROR: DDC set input failed for monitor ${monitorId}: ${detail}`);
-      return { ok: false, error: detail };
-    }
+      fitFlyoutToContent(width, height);
+    },
+    setSettings: (partial) => setSettingsHandler(partial),
+    openGg: async () => {
+      const candidates = [
+        "C:\\Program Files\\SteelSeries\\GG\\SteelSeriesGGClient.exe",
+        "C:\\Program Files\\SteelSeries\\GG\\SteelSeriesGG.exe",
+        "C:\\Program Files (x86)\\SteelSeries\\GG\\SteelSeriesGG.exe",
+      ];
+      for (const exe of candidates) {
+        if (fs.existsSync(exe)) {
+          const result = await shell.openPath(exe);
+          return { ok: result === "", detail: result || exe };
+        }
+      }
+      try {
+        await shell.openExternal("steelseriesgg://", { activate: true });
+        return { ok: true, detail: "steelseriesgg://" };
+      } catch (err) {
+        return { ok: false, detail: normalizeError(err) };
+      }
+    },
+    notifyCustom: async (payload) => {
+      const title = String(payload?.title || "").trim() || "Control Centre";
+      const body = String(payload?.body || "").trim() || "Notification";
+      showSystemNotification(title, body);
+      return { ok: true };
+    },
+    notifyBatteryLowTest: async () => {
+      const threshold = clampPercent(settings.batteryLowThreshold);
+      const level = toNullablePercent(cachedState.headset_battery_percent) ?? Math.max(0, threshold - 1);
+      await showBatteryLowNotification({ battery: level, threshold });
+      return { ok: true };
+    },
+    notifyBatterySwapTest: async () => {
+      const level = toNullablePercent(cachedState.headset_battery_percent) ?? 74;
+      await showHeadsetBatterySwapNotification({ headsetBattery: level });
+      return { ok: true };
+    },
+    getMixerData: mixerHandlers.getMixerData,
+    setMixerOutput: mixerHandlers.setMixerOutput,
+    setMixerAppVolume: mixerHandlers.setMixerAppVolume,
+    setMixerAppMute: mixerHandlers.setMixerAppMute,
+    getDdcMonitors: ddcHandlers.getDdcMonitors,
+    setDdcBrightness: ddcHandlers.setDdcBrightness,
+    setDdcInputSource: ddcHandlers.setDdcInputSource,
   });
 }
 
@@ -4905,7 +4843,6 @@ async function ensureSettingsWindow(): Promise<BrowserWindow> {
     return settingsWindow;
   }
   settingsWindow = await createCenteredWindow("settings", 1120, 860, "Control Centre - Settings");
-  attachRendererDiagnostics(settingsWindow, "settings");
   settingsWindow.on("closed", () => {
     settingsWindow = null;
   });
@@ -5108,7 +5045,6 @@ async function createApp(): Promise<void> {
   presetSwitcherService.start();
 
   mainWindow = createFlyoutWindow(settings);
-  attachRendererDiagnostics(mainWindow, "flyout");
   mainWindow.on("close", (evt) => {
     if (isQuitting) {
       return;
@@ -5190,7 +5126,16 @@ async function createApp(): Promise<void> {
   }
 }
 
-app.whenReady().then(createApp);
+app
+  .whenReady()
+  .then(createApp)
+  .catch((error: unknown) => {
+    const detail = normalizeError(error);
+    // Keep startup failures visible in both terminal logs and persisted app logs.
+    console.error(`[startup] ${detail}`);
+    pushLog(`ERROR: App startup failed: ${detail}`);
+    app.exit(1);
+  });
 app.on("window-all-closed", () => {});
 app.on("before-quit", () => {
   isQuitting = true;

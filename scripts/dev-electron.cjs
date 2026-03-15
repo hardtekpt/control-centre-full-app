@@ -3,7 +3,7 @@ const electronBinary = require("electron");
 
 const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE;
-env.VITE_DEV_SERVER_URL = "http://localhost:5173";
+env.VITE_DEV_SERVER_URL = env.VITE_DEV_SERVER_URL || "http://localhost:5180";
 
 const child = spawn(electronBinary, [".electron-build/electron/main.js"], {
   stdio: "inherit",
