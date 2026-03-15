@@ -6,8 +6,8 @@ import { execFile } from "node:child_process";
 import { ArctisApiService } from "./services/apis/arctis/service";
 import { DdcApiService } from "./services/apis/ddc/service";
 import { ShortcutService } from "./services/shortcuts/service";
-import * as PresetSwitcherServiceModule from "./services/presetSwitcher/service";
-import type {
+import {
+  PresetSwitcherService as PresetSwitcherServiceImpl,
   PresetSwitcherServiceConfig,
   PresetSwitcherService as PresetSwitcherServiceType,
 } from "./services/presetSwitcher/service";
@@ -84,10 +84,6 @@ interface HeadsetBatterySwapNotificationPayload {
 type PresetSwitcherServiceCtor = new (
   config: PresetSwitcherServiceConfig,
 ) => PresetSwitcherServiceType;
-type PresetSwitcherModuleShape = {
-  PresetSwitcherService?: PresetSwitcherServiceCtor;
-  default?: PresetSwitcherServiceCtor;
-};
 type OsdLayout = { displayId: number; x: number; y: number; width: number; height: number; uiScale: number };
 let headsetVolumeOsdLayout: OsdLayout | null = null;
 let micMuteOsdLayout: OsdLayout | null = null;
@@ -107,15 +103,7 @@ let cachedPresets: PresetMap = {};
 let backend: ArctisApiService | null = null;
 let ddcService: DdcApiService | null = null;
 const shortcutService = new ShortcutService();
-const PresetSwitcherServiceCtor =
-  (PresetSwitcherServiceModule as PresetSwitcherModuleShape).PresetSwitcherService ??
-  (PresetSwitcherServiceModule as PresetSwitcherModuleShape).default;
-
-if (typeof PresetSwitcherServiceCtor !== "function") {
-  throw new Error("PresetSwitcherService module did not provide a constructable export.");
-}
-
-const presetSwitcherService = new (PresetSwitcherServiceCtor as new (config: PresetSwitcherServiceConfig) => PresetSwitcherServiceType)({
+const presetSwitcherService = new (PresetSwitcherServiceImpl as PresetSwitcherServiceCtor)({
   getCurrentPreset: (channel) => {
     const current = cachedState.channel_preset?.[channel as keyof NonNullable<AppState["channel_preset"]>];
     return typeof current === "string" ? current : null;
