@@ -216,7 +216,7 @@ function LiveApp({ windowMode }: { windowMode: "dashboard" | "settings" }) {
 
   if (windowMode === "settings") {
     return (
-      <main className="window-base app-shell standalone-page">
+      <main className="window-base app-shell standalone-page flex h-full w-full flex-col gap-2 overflow-hidden rounded-lg p-3.5">
         <SettingsPage
           settings={resolvedSettings}
           presets={presets}
@@ -235,8 +235,8 @@ function LiveApp({ windowMode }: { windowMode: "dashboard" | "settings" }) {
           onTestLowBatteryNotification={() => void actions.notifyBatteryLowTest()}
           onTestBatterySwapNotification={() => void actions.notifyBatterySwapTest()}
         />
-        <div className="standalone-actions">
-          <button className="button" onClick={() => actions.closeCurrentWindow()}>
+        <div className="standalone-actions flex justify-end">
+          <button className="button rounded-md px-2.5 py-1.5" onClick={() => actions.closeCurrentWindow()}>
             Close
           </button>
         </div>
@@ -245,9 +245,9 @@ function LiveApp({ windowMode }: { windowMode: "dashboard" | "settings" }) {
   }
 
   return (
-    <main className="window-base app-shell">
-      <header className="titlebar">
-        <div className="titlebar-left">
+    <main className="window-base app-shell flex h-full w-full flex-col gap-2 overflow-hidden rounded-lg p-3.5">
+      <header className="titlebar flex items-center justify-between">
+        <div className="titlebar-left flex items-center gap-2.5">
           <div className="conn-row title-conn">
             <div className={`conn-badge ${state.connected === true ? "on" : state.connected === false ? "off" : "na"}`} title="Connected">
               <span className="status-icon">{"\uE839"}</span>
@@ -264,16 +264,16 @@ function LiveApp({ windowMode }: { windowMode: "dashboard" | "settings" }) {
             <BatteryBadge kind="charging" percent={state.base_battery_percent ?? 0} showPercent={resolvedSettings.showBatteryPercent} />
           </div>
         </div>
-        <div className="titlebar-right">
-          <div className="updated-inline">Updated: {state.updated_at ?? "--:--:--"}</div>
+        <div className="titlebar-right flex items-center gap-2.5">
+          <div className="updated-inline text-xs opacity-70">Updated: {state.updated_at ?? "--:--:--"}</div>
           <div className="icons">
-            <div onClick={() => void actions.openGG()} title="Open SteelSeries GG">
+            <div className="cursor-pointer" onClick={() => void actions.openGG()} title="Open SteelSeries GG">
               <SteelSeriesIcon />
             </div>
-            <div onClick={() => void actions.setFlyoutPinned(!flyoutPinned)} data-active={flyoutPinned ? "true" : "false"} title={flyoutPinned ? "Unpin window" : "Pin window"}>
+            <div className="cursor-pointer" onClick={() => void actions.setFlyoutPinned(!flyoutPinned)} data-active={flyoutPinned ? "true" : "false"} title={flyoutPinned ? "Unpin window" : "Pin window"}>
               &#xE718;
             </div>
-            <div onClick={() => actions.openSettingsWindow()} title="Settings">
+            <div className="cursor-pointer" onClick={() => actions.openSettingsWindow()} title="Settings">
               &#xE713;
             </div>
           </div>

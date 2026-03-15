@@ -1,118 +1,95 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { AppState, BackendCommand, PresetMap, RunningAppInfo, UiSettings } from "@shared/types";
+import type {
+  ArctisBridgeApi,
+  EventChannel,
+  EventPayload,
+  InvokeArgs,
+  InvokeChannel,
+  InvokeResult,
+} from "@shared/ipc";
 
-interface InitialPayload {
-  state: AppState;
-  presets: PresetMap;
-  settings: UiSettings;
-  openApps: RunningAppInfo[];
-  theme: { isDark: boolean; accent: string };
-  status: string;
-  error: string | null;
-  logs: string[];
-  ddcMonitors: DdcMonitorPayload[];
-  ddcMonitorsUpdatedAt: number | null;
-  flyoutPinned: boolean;
-  serviceStatus: {
-    arctisApi: { state: "starting" | "running" | "error" | "stopped"; detail: string };
-    ddcApi: {
-      state: "starting" | "running" | "error" | "stopped";
-      detail: string;
-      endpoint: string;
-      managed: boolean;
-      pid: number | null;
-    };
-  };
+// Keep preload runtime self-contained because sandboxed preload cannot require
+// arbitrary local modules at runtime.
+const IPC_INVOKE = {
+  APP_GET_INITIAL: "app:get-initial",
+  SERVICES_GET_STATUS: "services:get-status",
+  APP_OPEN_GG: "app:open-gg",
+  APP_NOTIFY_CUSTOM: "app:notify-custom",
+  APP_NOTIFY_BATTERY_LOW_TEST: "app:notify-battery-low-test",
+  APP_NOTIFY_BATTERY_SWAP_TEST: "app:notify-battery-swap-test",
+  MIXER_GET_DATA: "mixer:get-data",
+  MIXER_SET_OUTPUT: "mixer:set-output",
+  MIXER_SET_APP_VOLUME: "mixer:set-app-volume",
+  MIXER_SET_APP_MUTE: "mixer:set-app-mute",
+  DDC_GET_MONITORS: "ddc:get-monitors",
+  DDC_SET_BRIGHTNESS: "ddc:set-brightness",
+  DDC_SET_INPUT_SOURCE: "ddc:set-input-source",
+  WINDOW_SET_PINNED: "window:set-pinned",
+  SETTINGS_SET: "settings:set",
+} as const;
+
+const IPC_SEND = {
+  BACKEND_COMMAND: "backend:command",
+  NOTIFICATION_HEADSET_VOLUME_PREVIEW: "notification:headset-volume-preview",
+  WINDOW_OPEN_SETTINGS: "window:open-settings",
+  WINDOW_CLOSE_CURRENT: "window:close-current",
+  WINDOW_FIT_CONTENT: "window:fit-content",
+} as const;
+
+const IPC_EVENT = {
+  BACKEND_STATE: "backend:state",
+  BACKEND_PRESETS: "backend:presets",
+  BACKEND_STATUS: "backend:status",
+  BACKEND_ERROR: "backend:error",
+  THEME_UPDATE: "theme:update",
+  SETTINGS_UPDATE: "settings:update",
+  APP_LOG: "app:log",
+  DDC_UPDATE: "ddc:update",
+  OPEN_APPS_UPDATE: "open-apps:update",
+} as const;
+
+function invoke<C extends InvokeChannel>(channel: C, ...params: InvokeArgs<C>): Promise<InvokeResult<C>> {
+  return ipcRenderer.invoke(channel, ...params) as Promise<InvokeResult<C>>;
 }
 
-interface MixerDataPayload {
-  outputs: Array<{ id: string; name: string }>;
-  selectedOutputId: string;
-  apps: Array<{ id: string; name: string; volume: number; muted: boolean }>;
+function subscribe<C extends EventChannel>(channel: C, cb: (payload: EventPayload<C>) => void): () => void {
+  const fn = (_: unknown, payload: EventPayload<C>) => cb(payload);
+  ipcRenderer.on(channel, fn);
+  return () => ipcRenderer.removeListener(channel, fn);
 }
 
-interface DdcMonitorPayload {
-  monitor_id: number;
-  name: string;
-  brightness: number | null;
-  input_source: string | null;
-  available_inputs: string[];
-  contrast: number | null;
-  power_mode: string | null;
-  supports: string[];
-}
-
-const api = {
-  getInitial: (): Promise<InitialPayload> => ipcRenderer.invoke("app:get-initial"),
-  getServiceStatus: (): Promise<InitialPayload["serviceStatus"]> => ipcRenderer.invoke("services:get-status"),
-  openGG: (): Promise<{ ok: boolean; detail: string }> => ipcRenderer.invoke("app:open-gg"),
-  notifyCustom: (title: string, body: string): Promise<{ ok: boolean }> => ipcRenderer.invoke("app:notify-custom", { title, body }),
-  notifyBatteryLowTest: (): Promise<{ ok: boolean }> => ipcRenderer.invoke("app:notify-battery-low-test"),
-  notifyBatterySwapTest: (): Promise<{ ok: boolean }> => ipcRenderer.invoke("app:notify-battery-swap-test"),
-  notifyHeadsetVolumePreview: (value: number): void => ipcRenderer.send("notification:headset-volume-preview", value),
-  getMixerData: (): Promise<MixerDataPayload> => ipcRenderer.invoke("mixer:get-data"),
-  setMixerOutput: (outputId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke("mixer:set-output", outputId),
-  setMixerAppVolume: (appId: string, volume: number): Promise<{ ok: boolean }> =>
-    ipcRenderer.invoke("mixer:set-app-volume", { appId, volume }),
-  setMixerAppMute: (appId: string, muted: boolean): Promise<{ ok: boolean }> =>
-    ipcRenderer.invoke("mixer:set-app-mute", { appId, muted }),
-  getDdcMonitors: (): Promise<{ ok: boolean; monitors: DdcMonitorPayload[]; updatedAt?: number | null; error?: string }> =>
-    ipcRenderer.invoke("ddc:get-monitors"),
-  setDdcBrightness: (monitorId: number, value: number): Promise<{ ok: boolean; monitor?: DdcMonitorPayload; error?: string }> =>
-    ipcRenderer.invoke("ddc:set-brightness", { monitorId, value }),
-  setDdcInputSource: (monitorId: number, value: string): Promise<{ ok: boolean; monitor?: DdcMonitorPayload; error?: string }> =>
-    ipcRenderer.invoke("ddc:set-input-source", { monitorId, value }),
-  sendCommand: (cmd: BackendCommand): void => ipcRenderer.send("backend:command", cmd),
-  closeCurrentWindow: (): void => ipcRenderer.send("window:close-current"),
-  openSettingsWindow: (): void => ipcRenderer.send("window:open-settings"),
-  setFlyoutPinned: (pinned: boolean): Promise<{ ok: boolean; pinned: boolean }> => ipcRenderer.invoke("window:set-pinned", pinned),
-  reportFlyoutContentSize: (width: number, height: number): void => ipcRenderer.send("window:fit-content", { width, height }),
-  setSettings: (settings: Partial<UiSettings>): Promise<UiSettings> => ipcRenderer.invoke("settings:set", settings),
-  onState: (cb: (state: AppState) => void): (() => void) => {
-    const fn = (_: unknown, payload: AppState) => cb(payload);
-    ipcRenderer.on("backend:state", fn);
-    return () => ipcRenderer.removeListener("backend:state", fn);
-  },
-  onPresets: (cb: (presets: PresetMap) => void): (() => void) => {
-    const fn = (_: unknown, payload: PresetMap) => cb(payload);
-    ipcRenderer.on("backend:presets", fn);
-    return () => ipcRenderer.removeListener("backend:presets", fn);
-  },
-  onStatus: (cb: (text: string) => void): (() => void) => {
-    const fn = (_: unknown, payload: string) => cb(payload);
-    ipcRenderer.on("backend:status", fn);
-    return () => ipcRenderer.removeListener("backend:status", fn);
-  },
-  onError: (cb: (text: string) => void): (() => void) => {
-    const fn = (_: unknown, payload: string) => cb(payload);
-    ipcRenderer.on("backend:error", fn);
-    return () => ipcRenderer.removeListener("backend:error", fn);
-  },
-  onTheme: (cb: (payload: { isDark: boolean; accent: string }) => void): (() => void) => {
-    const fn = (_: unknown, payload: { isDark: boolean; accent: string }) => cb(payload);
-    ipcRenderer.on("theme:update", fn);
-    return () => ipcRenderer.removeListener("theme:update", fn);
-  },
-  onSettings: (cb: (payload: UiSettings) => void): (() => void) => {
-    const fn = (_: unknown, payload: UiSettings) => cb(payload);
-    ipcRenderer.on("settings:update", fn);
-    return () => ipcRenderer.removeListener("settings:update", fn);
-  },
-  onLog: (cb: (line: string) => void): (() => void) => {
-    const fn = (_: unknown, payload: string) => cb(payload);
-    ipcRenderer.on("app:log", fn);
-    return () => ipcRenderer.removeListener("app:log", fn);
-  },
-  onDdcUpdate: (cb: (monitors: DdcMonitorPayload[]) => void): (() => void) => {
-    const fn = (_: unknown, payload: DdcMonitorPayload[]) => cb(payload);
-    ipcRenderer.on("ddc:update", fn);
-    return () => ipcRenderer.removeListener("ddc:update", fn);
-  },
-  onOpenApps: (cb: (apps: RunningAppInfo[]) => void): (() => void) => {
-    const fn = (_: unknown, payload: RunningAppInfo[]) => cb(payload);
-    ipcRenderer.on("open-apps:update", fn);
-    return () => ipcRenderer.removeListener("open-apps:update", fn);
-  },
+const api: ArctisBridgeApi = {
+  invoke,
+  getInitial: () => invoke(IPC_INVOKE.APP_GET_INITIAL),
+  getServiceStatus: () => invoke(IPC_INVOKE.SERVICES_GET_STATUS),
+  openGG: () => invoke(IPC_INVOKE.APP_OPEN_GG),
+  notifyCustom: (title, body) => invoke(IPC_INVOKE.APP_NOTIFY_CUSTOM, { title, body }),
+  notifyBatteryLowTest: () => invoke(IPC_INVOKE.APP_NOTIFY_BATTERY_LOW_TEST),
+  notifyBatterySwapTest: () => invoke(IPC_INVOKE.APP_NOTIFY_BATTERY_SWAP_TEST),
+  notifyHeadsetVolumePreview: (value) => ipcRenderer.send(IPC_SEND.NOTIFICATION_HEADSET_VOLUME_PREVIEW, value),
+  getMixerData: () => invoke(IPC_INVOKE.MIXER_GET_DATA),
+  setMixerOutput: (outputId) => invoke(IPC_INVOKE.MIXER_SET_OUTPUT, outputId),
+  setMixerAppVolume: (appId, volume) => invoke(IPC_INVOKE.MIXER_SET_APP_VOLUME, { appId, volume }),
+  setMixerAppMute: (appId, muted) => invoke(IPC_INVOKE.MIXER_SET_APP_MUTE, { appId, muted }),
+  getDdcMonitors: () => invoke(IPC_INVOKE.DDC_GET_MONITORS),
+  setDdcBrightness: (monitorId, value) => invoke(IPC_INVOKE.DDC_SET_BRIGHTNESS, { monitorId, value }),
+  setDdcInputSource: (monitorId, value) => invoke(IPC_INVOKE.DDC_SET_INPUT_SOURCE, { monitorId, value }),
+  sendCommand: (cmd) => ipcRenderer.send(IPC_SEND.BACKEND_COMMAND, cmd),
+  closeCurrentWindow: () => ipcRenderer.send(IPC_SEND.WINDOW_CLOSE_CURRENT),
+  openSettingsWindow: () => ipcRenderer.send(IPC_SEND.WINDOW_OPEN_SETTINGS),
+  setFlyoutPinned: (pinned) => invoke(IPC_INVOKE.WINDOW_SET_PINNED, pinned),
+  reportFlyoutContentSize: (width, height) => ipcRenderer.send(IPC_SEND.WINDOW_FIT_CONTENT, { width, height }),
+  setSettings: (settings) => invoke(IPC_INVOKE.SETTINGS_SET, settings),
+  onState: (cb) => subscribe(IPC_EVENT.BACKEND_STATE, cb),
+  onPresets: (cb) => subscribe(IPC_EVENT.BACKEND_PRESETS, cb),
+  onStatus: (cb) => subscribe(IPC_EVENT.BACKEND_STATUS, cb),
+  onError: (cb) => subscribe(IPC_EVENT.BACKEND_ERROR, cb),
+  onTheme: (cb) => subscribe(IPC_EVENT.THEME_UPDATE, cb),
+  onSettings: (cb) => subscribe(IPC_EVENT.SETTINGS_UPDATE, cb),
+  onLog: (cb) => subscribe(IPC_EVENT.APP_LOG, cb),
+  onDdcUpdate: (cb) => subscribe(IPC_EVENT.DDC_UPDATE, cb),
+  onOpenApps: (cb) => subscribe(IPC_EVENT.OPEN_APPS_UPDATE, cb),
 };
 
 contextBridge.exposeInMainWorld("arctisBridge", api);
+contextBridge.exposeInMainWorld("api", api);

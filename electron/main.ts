@@ -23,6 +23,13 @@ import {
   type ShortcutBinding,
   type UiSettings,
 } from "../shared/types";
+import {
+  IPC_EVENT,
+  IPC_INVOKE,
+  IPC_SEND,
+  type DdcMonitorPayload,
+  type ServiceStatusPayload,
+} from "../shared/ipc";
 
 let mainWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
@@ -135,7 +142,7 @@ const presetSwitcherService = new (PresetSwitcherServiceImpl as PresetSwitcherSe
   },
   onAppsUpdate: (apps) => {
     for (const win of allWindows()) {
-      win.webContents.send("open-apps:update", apps);
+      win.webContents.send(IPC_EVENT.OPEN_APPS_UPDATE, apps);
     }
   },
   onActiveAppUpdate: (activeApp) => {
@@ -247,30 +254,7 @@ interface MixerApp {
   muted: boolean;
 }
 
-interface DdcMonitor {
-  monitor_id: number;
-  name: string;
-  brightness: number | null;
-  input_source: string | null;
-  available_inputs: string[];
-  contrast: number | null;
-  power_mode: string | null;
-  supports: string[];
-}
-
-interface ServiceStatusPayload {
-  arctisApi: {
-    state: "starting" | "running" | "error" | "stopped";
-    detail: string;
-  };
-  ddcApi: {
-    state: "starting" | "running" | "error" | "stopped";
-    detail: string;
-    endpoint: string;
-    managed: boolean;
-    pid: number | null;
-  };
-}
+type DdcMonitor = DdcMonitorPayload;
 
 function getUserFile(name: string): string {
   return path.join(app.getPath("userData"), name);
@@ -364,18 +348,42 @@ function broadcastDdcUpdate(): void {
   schedulePersist();
   for (const win of allWindows()) {
     if (!win.isDestroyed()) {
-      win.webContents.send("ddc:update", ddcMonitorsCache);
+      win.webContents.send(IPC_EVENT.DDC_UPDATE, ddcMonitorsCache);
     }
   }
 }
 
 function pushLog(text: string): void {
   const line = `${new Date().toLocaleTimeString()}  ${text}`;
+  if (!app.isPackaged) {
+    console.log(line);
+  }
   logBuffer = [line, ...logBuffer].slice(0, 200);
   for (const win of allWindows()) {
     if (!win.isDestroyed()) {
-      win.webContents.send("app:log", line);
+      win.webContents.send(IPC_EVENT.APP_LOG, line);
     }
+  }
+}
+
+function attachRendererDiagnostics(win: BrowserWindow, label: "flyout" | "settings"): void {
+  win.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
+    pushLog(`[ERROR][${label}] did-fail-load code=${errorCode} desc=${errorDescription} url=${validatedURL}`);
+  });
+  win.webContents.on("preload-error", (_event, preloadPath, error) => {
+    pushLog(`[ERROR][${label}] preload-error path=${preloadPath} detail=${normalizeError(error)}`);
+  });
+  if (!app.isPackaged) {
+    win.webContents.on("console-message", (_event, level, message) => {
+      if (level < 2) {
+        return;
+      }
+      const normalized = String(message ?? "").trim();
+      if (!normalized) {
+        return;
+      }
+      pushLog(`[${label}][console:${level}] ${normalized}`);
+    });
   }
 }
 
@@ -4283,7 +4291,7 @@ function clampPercent(value: number): number {
 
 function broadcastStateUpdate(): void {
   for (const win of allWindows()) {
-    win.webContents.send("backend:state", cachedState);
+    win.webContents.send(IPC_EVENT.BACKEND_STATE, cachedState);
   }
 }
 
@@ -4519,14 +4527,14 @@ function wireBackend(): void {
     }
     schedulePersist();
     for (const win of allWindows()) {
-      win.webContents.send("backend:state", cachedState);
+      win.webContents.send(IPC_EVENT.BACKEND_STATE, cachedState);
     }
   });
   backend.on("presets", (presets: PresetMap) => {
     cachedPresets = presets;
     schedulePersist();
     for (const win of allWindows()) {
-      win.webContents.send("backend:presets", presets);
+      win.webContents.send(IPC_EVENT.BACKEND_PRESETS, presets);
     }
   });
   backend.on("status", (text: string) => {
@@ -4541,7 +4549,7 @@ function wireBackend(): void {
     }
     schedulePersist();
     for (const win of allWindows()) {
-      win.webContents.send("backend:status", text);
+      win.webContents.send(IPC_EVENT.BACKEND_STATUS, text);
     }
   });
   backend.on("error", (text: string) => {
@@ -4553,7 +4561,7 @@ function wireBackend(): void {
     }
     schedulePersist();
     for (const win of allWindows()) {
-      win.webContents.send("backend:error", text);
+      win.webContents.send(IPC_EVENT.BACKEND_ERROR, text);
     }
   });
   backend.start();
@@ -4563,7 +4571,7 @@ function wireIpc(): void {
   if (!backend) {
     return;
   }
-  ipcMain.handle("app:get-initial", async () => {
+  ipcMain.handle(IPC_INVOKE.APP_GET_INITIAL, async () => {
     return {
       state: cachedState,
       presets: cachedPresets,
@@ -4579,24 +4587,24 @@ function wireIpc(): void {
       serviceStatus: getServiceStatusPayload(),
     };
   });
-  ipcMain.handle("window:set-pinned", (_evt, pinned: boolean) => {
+  ipcMain.handle(IPC_INVOKE.WINDOW_SET_PINNED, (_evt, pinned: boolean) => {
     flyoutPinned = Boolean(pinned);
     schedulePersist();
     return { ok: true, pinned: flyoutPinned };
   });
-  ipcMain.handle("services:get-status", async () => getServiceStatusPayload());
-  ipcMain.on("backend:command", (_evt, cmd: BackendCommand) => backend!.send(cmd));
-  ipcMain.on("notification:headset-volume-preview", (_evt, payload: unknown) => {
+  ipcMain.handle(IPC_INVOKE.SERVICES_GET_STATUS, async () => getServiceStatusPayload());
+  ipcMain.on(IPC_SEND.BACKEND_COMMAND, (_evt, cmd: BackendCommand) => backend!.send(cmd));
+  ipcMain.on(IPC_SEND.NOTIFICATION_HEADSET_VOLUME_PREVIEW, (_evt, payload: unknown) => {
     const volume = toNullablePercent(typeof payload === "number" ? payload : Number(payload));
     if (volume == null || !isNotifEnabled("headsetVolume")) {
       return;
     }
     void showHeadsetVolumeNotification({ volume });
   });
-  ipcMain.on("window:open-settings", () => {
+  ipcMain.on(IPC_SEND.WINDOW_OPEN_SETTINGS, () => {
     void showSettingsWindow();
   });
-  ipcMain.on("window:close-current", (evt) => {
+  ipcMain.on(IPC_SEND.WINDOW_CLOSE_CURRENT, (evt) => {
     const win = BrowserWindow.fromWebContents(evt.sender);
     if (!win) {
       return;
@@ -4607,7 +4615,7 @@ function wireIpc(): void {
     }
     win.close();
   });
-  ipcMain.on("window:fit-content", (evt, payload: { width?: number; height?: number }) => {
+  ipcMain.on(IPC_SEND.WINDOW_FIT_CONTENT, (evt, payload: { width?: number; height?: number }) => {
     if (!mainWindow || mainWindow.isDestroyed()) {
       return;
     }
@@ -4621,7 +4629,7 @@ function wireIpc(): void {
     }
     fitFlyoutToContent(width, height);
   });
-  ipcMain.handle("settings:set", (_evt, partial: Partial<UiSettings>) => {
+  ipcMain.handle(IPC_INVOKE.SETTINGS_SET, (_evt, partial: Partial<UiSettings>) => {
     const next = persistSettings({
       ...settings,
       ...partial,
@@ -4709,15 +4717,15 @@ function wireIpc(): void {
       cachedState = inferredState;
       schedulePersist();
       for (const win of allWindows()) {
-        win.webContents.send("backend:state", cachedState);
+        win.webContents.send(IPC_EVENT.BACKEND_STATE, cachedState);
       }
     }
     for (const win of allWindows()) {
-      win.webContents.send("settings:update", next);
+      win.webContents.send(IPC_EVENT.SETTINGS_UPDATE, next);
     }
     return next;
   });
-  ipcMain.handle("app:open-gg", async () => {
+  ipcMain.handle(IPC_INVOKE.APP_OPEN_GG, async () => {
     const candidates = [
       "C:\\Program Files\\SteelSeries\\GG\\SteelSeriesGGClient.exe",
       "C:\\Program Files\\SteelSeries\\GG\\SteelSeriesGG.exe",
@@ -4732,24 +4740,24 @@ function wireIpc(): void {
     const uriResult = await shell.openExternal("steelseriesgg://", { activate: true });
     return { ok: uriResult, detail: "steelseriesgg://" };
   });
-  ipcMain.handle("app:notify-custom", async (_evt, payload: { title?: string; body?: string }) => {
+  ipcMain.handle(IPC_INVOKE.APP_NOTIFY_CUSTOM, async (_evt, payload: { title?: string; body?: string }) => {
     const title = String(payload?.title || "").trim() || "Control Centre";
     const body = String(payload?.body || "").trim() || "Notification";
     showSystemNotification(title, body);
     return { ok: true };
   });
-  ipcMain.handle("app:notify-battery-low-test", async () => {
+  ipcMain.handle(IPC_INVOKE.APP_NOTIFY_BATTERY_LOW_TEST, async () => {
     const threshold = clampPercent(settings.batteryLowThreshold);
     const level = toNullablePercent(cachedState.headset_battery_percent) ?? Math.max(0, threshold - 1);
     await showBatteryLowNotification({ battery: level, threshold });
     return { ok: true };
   });
-  ipcMain.handle("app:notify-battery-swap-test", async () => {
+  ipcMain.handle(IPC_INVOKE.APP_NOTIFY_BATTERY_SWAP_TEST, async () => {
     const level = toNullablePercent(cachedState.headset_battery_percent) ?? 74;
     await showHeadsetBatterySwapNotification({ headsetBattery: level });
     return { ok: true };
   });
-  ipcMain.handle("mixer:get-data", async () => {
+  ipcMain.handle(IPC_INVOKE.MIXER_GET_DATA, async () => {
     const outputs = await getMixerOutputs();
     const selectedOutputId = mixerOutputId && outputs.some((o) => o.id === mixerOutputId) ? mixerOutputId : outputs[0]?.id ?? "default";
     if (selectedOutputId !== mixerOutputId) {
@@ -4758,12 +4766,12 @@ function wireIpc(): void {
     }
     return { outputs, selectedOutputId, apps: getMixerApps() };
   });
-  ipcMain.handle("mixer:set-output", (_evt, outputId: string) => {
+  ipcMain.handle(IPC_INVOKE.MIXER_SET_OUTPUT, (_evt, outputId: string) => {
     mixerOutputId = String(outputId || "").trim() || null;
     schedulePersist();
     return { ok: true };
   });
-  ipcMain.handle("mixer:set-app-volume", (_evt, payload: { appId: string; volume: number }) => {
+  ipcMain.handle(IPC_INVOKE.MIXER_SET_APP_VOLUME, (_evt, payload: { appId: string; volume: number }) => {
     const appId = String(payload?.appId || "").trim();
     if (!appId) {
       return { ok: false };
@@ -4772,7 +4780,7 @@ function wireIpc(): void {
     schedulePersist();
     return { ok: true };
   });
-  ipcMain.handle("mixer:set-app-mute", (_evt, payload: { appId: string; muted: boolean }) => {
+  ipcMain.handle(IPC_INVOKE.MIXER_SET_APP_MUTE, (_evt, payload: { appId: string; muted: boolean }) => {
     const appId = String(payload?.appId || "").trim();
     if (!appId) {
       return { ok: false };
@@ -4781,7 +4789,7 @@ function wireIpc(): void {
     schedulePersist();
     return { ok: true };
   });
-  ipcMain.handle("ddc:get-monitors", async () => {
+  ipcMain.handle(IPC_INVOKE.DDC_GET_MONITORS, async () => {
     debugDdc("ipc ddc:get-monitors begin");
     try {
       const monitors = await fetchDdcMonitorsIfStale(false);
@@ -4803,7 +4811,7 @@ function wireIpc(): void {
       return { ok: false, monitors: [], error: detail, updatedAt: ddcMonitorsCacheTs || null };
     }
   });
-  ipcMain.handle("ddc:set-brightness", async (_evt, payload: { monitorId: number; value: number }) => {
+  ipcMain.handle(IPC_INVOKE.DDC_SET_BRIGHTNESS, async (_evt, payload: { monitorId: number; value: number }) => {
     const monitorId = Number(payload?.monitorId);
     const value = clampPercent(Number(payload?.value));
     debugDdc(`ipc ddc:set-brightness begin monitor=${monitorId} value=${value}`);
@@ -4829,7 +4837,7 @@ function wireIpc(): void {
       return { ok: false, error: detail };
     }
   });
-  ipcMain.handle("ddc:set-input-source", async (_evt, payload: { monitorId: number; value: string }) => {
+  ipcMain.handle(IPC_INVOKE.DDC_SET_INPUT_SOURCE, async (_evt, payload: { monitorId: number; value: string }) => {
     const monitorId = Number(payload?.monitorId);
     const value = String(payload?.value ?? "").trim();
     debugDdc(`ipc ddc:set-input-source begin monitor=${monitorId} value=${value}`);
@@ -4897,6 +4905,7 @@ async function ensureSettingsWindow(): Promise<BrowserWindow> {
     return settingsWindow;
   }
   settingsWindow = await createCenteredWindow("settings", 1120, 860, "Control Centre - Settings");
+  attachRendererDiagnostics(settingsWindow, "settings");
   settingsWindow.on("closed", () => {
     settingsWindow = null;
   });
@@ -5077,11 +5086,11 @@ function registerConfiguredShortcuts(): void {
   if (result.errors.length > 0) {
     for (const error of result.errors) {
       pushLog(`ERROR: ${error}`);
-      mainWindow?.webContents.send("backend:error", error);
+      mainWindow?.webContents.send(IPC_EVENT.BACKEND_ERROR, error);
     }
     return;
   }
-  mainWindow?.webContents.send("backend:status", `Shortcuts registered: ${result.registered}`);
+  mainWindow?.webContents.send(IPC_EVENT.BACKEND_STATUS, `Shortcuts registered: ${result.registered}`);
 }
 
 async function createApp(): Promise<void> {
@@ -5099,6 +5108,7 @@ async function createApp(): Promise<void> {
   presetSwitcherService.start();
 
   mainWindow = createFlyoutWindow(settings);
+  attachRendererDiagnostics(mainWindow, "flyout");
   mainWindow.on("close", (evt) => {
     if (isQuitting) {
       return;
@@ -5168,7 +5178,7 @@ async function createApp(): Promise<void> {
     tray?.setImage(buildTrayIcon());
     const payload = await getThemePayload();
     for (const win of allWindows()) {
-      win.webContents.send("theme:update", payload);
+      win.webContents.send(IPC_EVENT.THEME_UPDATE, payload);
     }
   });
 
@@ -5267,6 +5277,7 @@ app.on("before-quit", () => {
   void stopManagedDdcApi();
   backend?.stop();
 });
+
 
 
 

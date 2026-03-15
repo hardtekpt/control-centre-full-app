@@ -1,4 +1,4 @@
-import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { CHANNELS, type ChannelKey, type NotificationKey, type PresetMap, type RunningAppInfo, type ShortcutAction, type ShortcutBinding, type UiSettings } from "@shared/types";
 import type { DdcMonitor, ServiceStatus } from "../state/store";
 
@@ -158,13 +158,17 @@ export default function SettingsPage({
   const [newShortcut, setNewShortcut] = useState<ShortcutBinding>(defaultShortcutBinding);
   const [newPresetRule, setNewPresetRule] = useState({ enabled: true, appId: "", channel: "master" as ChannelKey, presetId: "" });
 
-  const sortedOpenApps = [...openApps]
-    .filter((item) => String(item.id ?? "").trim())
-    .sort((a, b) => {
-      const aName = String(a.name || a.id).toLowerCase();
-      const bName = String(b.name || b.id).toLowerCase();
-      return aName.localeCompare(bName);
-    });
+  const sortedOpenApps = useMemo(
+    () =>
+      [...openApps]
+        .filter((item) => String(item.id ?? "").trim())
+        .sort((a, b) => {
+          const aName = String(a.name || a.id).toLowerCase();
+          const bName = String(b.name || b.id).toLowerCase();
+          return aName.localeCompare(bName);
+        }),
+    [openApps],
+  );
   const appLabel = (app: RunningAppInfo): string => {
     const name = String(app.name || app.id).trim();
     const executable = String(app.executable || app.id).trim();
@@ -185,7 +189,11 @@ export default function SettingsPage({
       if (prev.appId && sortedOpenApps.some((app) => app.id === prev.appId)) {
         return prev;
       }
-      return { ...prev, appId: sortedOpenApps[0]?.id ?? "", presetId: "" };
+      const fallbackAppId = sortedOpenApps[0]?.id ?? "";
+      if (prev.appId === fallbackAppId && prev.presetId === "") {
+        return prev;
+      }
+      return { ...prev, appId: fallbackAppId, presetId: "" };
     });
   }, [sortedOpenApps]);
   const dashboardMonitorIdRaw = Number(settings.ddc.dashboardMonitorId);

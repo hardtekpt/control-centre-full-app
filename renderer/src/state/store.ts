@@ -1,48 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CHANNELS, type AppState, type PresetMap, type RunningAppInfo, type UiSettings } from "@shared/types";
+import { IPC_INVOKE, type DdcMonitorPayload, type MixerDataPayload, type ServiceStatusPayload } from "@shared/ipc";
 import { mergeState } from "@shared/settings";
+import { useIpc } from "../hooks/useIpc";
 
-export interface MixerApp {
-  id: string;
-  name: string;
-  volume: number;
-  muted: boolean;
-}
-
-export interface MixerData {
-  outputs: Array<{ id: string; name: string }>;
-  selectedOutputId: string;
-  apps: MixerApp[];
-}
+export type MixerData = MixerDataPayload;
 
 function clampPercent(value: number): number {
   const numeric = Number(value);
   return Math.max(0, Math.min(100, Math.floor(Number.isFinite(numeric) ? numeric : 0)));
 }
 
-export interface DdcMonitor {
-  monitor_id: number;
-  name: string;
-  brightness: number | null;
-  input_source: string | null;
-  available_inputs: string[];
-  contrast: number | null;
-  power_mode: string | null;
-  supports: string[];
-}
+export type DdcMonitor = DdcMonitorPayload;
 
-export interface ServiceStatus {
-  arctisApi: { state: "starting" | "running" | "error" | "stopped"; detail: string };
-  ddcApi: {
-    state: "starting" | "running" | "error" | "stopped";
-    detail: string;
-    endpoint: string;
-    managed: boolean;
-    pid: number | null;
-  };
-}
+export type ServiceStatus = ServiceStatusPayload;
 
 export function useBridgeState() {
+  const { invoke: invokeServiceStatus } = useIpc(IPC_INVOKE.SERVICES_GET_STATUS);
+  const { invoke: invokeDdcMonitors } = useIpc(IPC_INVOKE.DDC_GET_MONITORS);
   const [ready, setReady] = useState(false);
   const [state, setState] = useState<AppState>(mergeState());
   const [presets, setPresets] = useState<PresetMap>({});
@@ -167,23 +142,23 @@ export function useBridgeState() {
       return;
     }
     const timer = window.setInterval(() => {
-      window.arctisBridge.getServiceStatus().then((next) => setServiceStatus(next)).catch(() => undefined);
+      invokeServiceStatus().then((next) => setServiceStatus(next)).catch(() => undefined);
     }, 2000);
     return () => window.clearInterval(timer);
-  }, [ready, windowMode]);
+  }, [invokeServiceStatus, ready, windowMode]);
 
   useEffect(() => {
     if (!ready || windowMode === "dashboard") {
       return;
     }
-    window.arctisBridge.getDdcMonitors().then((result) => {
+    invokeDdcMonitors().then((result) => {
       setDdcMonitors(Array.isArray(result.monitors) ? result.monitors : []);
       setDdcMonitorsUpdatedAt(Number.isFinite(result.updatedAt) ? Number(result.updatedAt) : null);
       setDdcError(result.ok ? null : (result.error ?? "Unable to fetch DDC monitor data."));
     }).catch((err) => {
       setDdcError(err instanceof Error ? err.message : String(err));
     });
-  }, [ready, windowMode]);
+  }, [invokeDdcMonitors, ready, windowMode]);
 
   useEffect(() => {
     if (!settings) return;
@@ -269,7 +244,7 @@ export function useBridgeState() {
         await window.arctisBridge.notifyBatterySwapTest();
       },
       refreshDdcMonitors: async () => {
-        const result = await window.arctisBridge.getDdcMonitors();
+        const result = await invokeDdcMonitors();
         setDdcMonitors(Array.isArray(result.monitors) ? result.monitors : []);
         setDdcMonitorsUpdatedAt(Number.isFinite(result.updatedAt) ? Number(result.updatedAt) : null);
         setDdcError(result.ok ? null : (result.error ?? "Unable to fetch DDC monitor data."));
@@ -316,7 +291,7 @@ export function useBridgeState() {
       },
       persistSettings,
     }),
-    [settings],
+    [invokeDdcMonitors, settings],
   );
 
   return {
