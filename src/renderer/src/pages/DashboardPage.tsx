@@ -3,7 +3,7 @@ import { CHANNELS, type AppState, type ChannelKey, type PresetMap, type UiSettin
 import ChannelRow from "../components/ChannelRow";
 import StatusCard from "../components/StatusCard";
 import AppMixerRow from "../components/AppMixerRow";
-import type { DdcMonitor, MixerData } from "../state/store";
+import type { DdcMonitor, MixerData } from "../stores/store";
 import MonitorControlsCard from "../components/MonitorControlsCard";
 
 interface DashboardPageProps {

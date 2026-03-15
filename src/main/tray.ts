@@ -8,8 +8,9 @@ const DEFAULT_TRAY_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="32" hei
   <path d="M21 11.2c1.8 1.5 2.7 3.1 2.7 4.8s-.9 3.3-2.7 4.8" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"/>
   <path d="M23.8 8.8c2.4 2 3.6 4.4 3.6 7.2s-1.2 5.2-3.6 7.2" fill="none" stroke="#ffb380" stroke-width="2.1" stroke-linecap="round"/>
 </svg>`;
-const PROJECT_TRAY_ICON_PNG_PATH = path.resolve(process.cwd(), "electron", "assets", "tray-icon.png");
-const PROJECT_TRAY_ICON_SVG_PATH = path.resolve(process.cwd(), "electron", "assets", "tray-icon.svg");
+const PROJECT_TRAY_ICON_ICO_PATH = path.resolve(process.cwd(), "src", "main", "assets", "tray-icon.ico");
+const PROJECT_TRAY_ICON_PNG_PATH = path.resolve(process.cwd(), "src", "main", "assets", "tray-icon.png");
+const PROJECT_TRAY_ICON_SVG_PATH = path.resolve(process.cwd(), "src", "main", "assets", "tray-icon.svg");
 
 interface TrayOptions {
   onToggle: () => void;
@@ -67,24 +68,24 @@ function loadTrayIconFromFile() {
   const appPath = safeAppPath();
   // Ordered from most likely locations in dev to packaged resource locations.
   const candidates = [
-    // Dev (compiled JS under .electron-build/electron).
-    path.resolve(__dirname, "..", "..", "electron", "assets", "tray-icon.ico"),
-    path.resolve(__dirname, "..", "..", "electron", "assets", "tray-icon.png"),
-    path.resolve(__dirname, "..", "..", "electron", "assets", "tray-icon.svg"),
+    // Dev workspace root.
+    PROJECT_TRAY_ICON_ICO_PATH,
+    PROJECT_TRAY_ICON_PNG_PATH,
+    PROJECT_TRAY_ICON_SVG_PATH,
     // Generic app-root candidate.
-    appPath ? path.join(appPath, "electron", "assets", "tray-icon.ico") : "",
-    appPath ? path.join(appPath, "electron", "assets", "tray-icon.png") : "",
-    appPath ? path.join(appPath, "electron", "assets", "tray-icon.svg") : "",
+    appPath ? path.join(appPath, "src", "main", "assets", "tray-icon.ico") : "",
+    appPath ? path.join(appPath, "src", "main", "assets", "tray-icon.png") : "",
+    appPath ? path.join(appPath, "src", "main", "assets", "tray-icon.svg") : "",
     // Packaged fallbacks.
-    path.join(process.resourcesPath, "app.asar", "electron", "assets", "tray-icon.ico"),
-    path.join(process.resourcesPath, "app.asar", "electron", "assets", "tray-icon.png"),
-    path.join(process.resourcesPath, "app.asar", "electron", "assets", "tray-icon.svg"),
-    path.join(process.resourcesPath, "app", "electron", "assets", "tray-icon.ico"),
-    path.join(process.resourcesPath, "app", "electron", "assets", "tray-icon.png"),
-    path.join(process.resourcesPath, "app", "electron", "assets", "tray-icon.svg"),
-    path.join(process.resourcesPath, "electron", "assets", "tray-icon.ico"),
-    path.join(process.resourcesPath, "electron", "assets", "tray-icon.png"),
-    path.join(process.resourcesPath, "electron", "assets", "tray-icon.svg"),
+    path.join(process.resourcesPath, "app.asar", "src", "main", "assets", "tray-icon.ico"),
+    path.join(process.resourcesPath, "app.asar", "src", "main", "assets", "tray-icon.png"),
+    path.join(process.resourcesPath, "app.asar", "src", "main", "assets", "tray-icon.svg"),
+    path.join(process.resourcesPath, "app", "src", "main", "assets", "tray-icon.ico"),
+    path.join(process.resourcesPath, "app", "src", "main", "assets", "tray-icon.png"),
+    path.join(process.resourcesPath, "app", "src", "main", "assets", "tray-icon.svg"),
+    path.join(process.resourcesPath, "src", "main", "assets", "tray-icon.ico"),
+    path.join(process.resourcesPath, "src", "main", "assets", "tray-icon.png"),
+    path.join(process.resourcesPath, "src", "main", "assets", "tray-icon.svg"),
   ].filter((p) => p.length > 0);
   for (const iconPath of candidates) {
     try {

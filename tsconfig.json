@@ -8,7 +8,7 @@
     "baseUrl": ".",
     "paths": {
       "@shared/*": [
-        "shared/*"
+        "src/shared/*"
       ]
     },
     "types": [
@@ -16,8 +16,8 @@
     ]
   },
   "include": [
-    "renderer/src",
-    "shared",
-    "vite.config.ts"
+    "src/renderer/src",
+    "src/shared",
+    "src/renderer/vite.config.ts"
   ]
 }

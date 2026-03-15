@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { CHANNELS, type ChannelKey, type NotificationKey, type PresetMap, type RunningAppInfo, type ShortcutAction, type ShortcutBinding, type UiSettings } from "@shared/types";
-import type { DdcMonitor, ServiceStatus } from "../state/store";
+import type { DdcMonitor, ServiceStatus } from "../stores/store";
 
 interface SettingsProps {
   settings: UiSettings;

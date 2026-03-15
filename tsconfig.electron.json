@@ -18,12 +18,13 @@
     "allowJs": false,
     "paths": {
       "@shared/*": [
-        "shared/*"
+        "src/shared/*"
       ]
     }
   },
   "include": [
-    "electron/**/*.ts",
-    "shared/**/*.ts"
+    "src/main/**/*.ts",
+    "src/preload/**/*.ts",
+    "src/shared/**/*.ts"
   ]
 }

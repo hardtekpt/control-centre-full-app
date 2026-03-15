@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import DashboardPage from "./pages/DashboardPage";
 import SettingsPage from "./pages/SettingsPage";
-import { useBridgeState } from "./state/store";
+import { useBridgeState } from "./stores/store";
 import { DEFAULT_SETTINGS } from "@shared/settings";
 
 function parsePx(value: string): number {

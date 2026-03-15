@@ -2,18 +2,18 @@
   "name": "control-centre-full-app",
   "version": "0.1.0",
   "description": "Electron + React tray flyout for Arctis Nova + Sonar control",
-  "main": ".electron-build/electron/main.js",
+  "main": ".electron-build/main/index.js",
   "author": "local",
   "license": "MIT",
   "scripts": {
     "clean:electron-build": "node -e \"require('node:fs').rmSync('.electron-build', { recursive: true, force: true })\"",
     "free:dev-port": "node scripts/free-dev-port.cjs 5180",
     "dev": "npm run clean:electron-build && npm run free:dev-port && concurrently -k \"npm:dev:renderer\" \"npm:dev:electron:watch\" \"npm:dev:electron\"",
-    "dev:renderer": "vite",
+    "dev:renderer": "vite --config src/renderer/vite.config.ts",
     "dev:electron:watch": "tsc -p tsconfig.electron.json --watch --preserveWatchOutput",
-    "dev:electron": "wait-on tcp:5180 .electron-build/electron/main.js .electron-build/electron/preload.js .electron-build/shared/ipc.js .electron-build/electron/ipc/registerCoreHandlers.js .electron-build/electron/ipc/settingsHandlers.js .electron-build/electron/ipc/mixerHandlers.js .electron-build/electron/ipc/ddcHandlers.js && node scripts/dev-electron.cjs",
+    "dev:electron": "wait-on tcp:5180 .electron-build/main/index.js .electron-build/preload/index.js .electron-build/shared/ipc.js .electron-build/main/ipc/registerCoreHandlers.js .electron-build/main/ipc/settingsHandlers.js .electron-build/main/ipc/mixerHandlers.js .electron-build/main/ipc/ddcHandlers.js .electron-build/main/ipc/appHandlers.js .electron-build/main/ipc/windowHandlers.js && node scripts/dev-electron.cjs",
     "build": "npm run build:renderer && npm run build:electron && electron-builder",
-    "build:renderer": "vite build",
+    "build:renderer": "vite build --config src/renderer/vite.config.ts",
     "build:electron": "tsc -p tsconfig.electron.json",
     "typecheck": "tsc --noEmit"
   },
@@ -51,7 +51,7 @@
     "files": [
       "dist/**",
       ".electron-build/**",
-      "electron/assets/**",
+      "src/main/assets/**",
       "scripts/**",
       "vendor/**",
       "package.json"

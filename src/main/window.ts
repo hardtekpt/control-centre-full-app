@@ -27,7 +27,7 @@ export function createFlyoutWindow(settings: UiSettings): BrowserWindow {
     skipTaskbar: false,
     hasShadow: true,
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: path.join(__dirname, "..", "preload", "index.js"),
       contextIsolation: true,
       nodeIntegration: false,
       backgroundThrottling: false,

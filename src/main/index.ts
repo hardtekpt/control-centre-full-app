@@ -32,6 +32,8 @@ import { createSettingsIpcHandler } from "./ipc/settingsHandlers";
 import { createMixerIpcHandlers } from "./ipc/mixerHandlers";
 import * as ddcHandlersModule from "./ipc/ddcHandlers";
 import type { CreateDdcIpcHandlersDeps, DdcIpcHandlers } from "./ipc/ddcHandlers";
+import { createAppIpcHandlers } from "./ipc/appHandlers";
+import { createWindowIpcHandlers } from "./ipc/windowHandlers";
 
 let mainWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
@@ -4698,6 +4700,34 @@ function wireIpc(): void {
     ddcBaseUrl: () => ddcBaseUrl(),
   });
 
+  const appHandlers = createAppIpcHandlers({
+    toNullablePercent: (value) => toNullablePercent(value),
+    isHeadsetVolumeNotificationEnabled: () => isNotifEnabled("headsetVolume"),
+    showHeadsetVolumeNotification: (payload) => showHeadsetVolumeNotification(payload),
+    fileExists: (filePath) => fs.existsSync(filePath),
+    openPath: (filePath) => shell.openPath(filePath),
+    openExternal: (url) => shell.openExternal(url, { activate: true }),
+    normalizeError: (error) => normalizeError(error),
+    showSystemNotification: (title, body) => showSystemNotification(title, body),
+    getBatteryLowTestPayload: () => {
+      const threshold = clampPercent(settings.batteryLowThreshold);
+      const level = toNullablePercent(cachedState.headset_battery_percent) ?? Math.max(0, threshold - 1);
+      return { battery: level, threshold };
+    },
+    showBatteryLowNotification: (payload) => showBatteryLowNotification(payload),
+    getBatterySwapTestPayload: () => {
+      const level = toNullablePercent(cachedState.headset_battery_percent) ?? 74;
+      return { headsetBattery: level };
+    },
+    showHeadsetBatterySwapNotification: (payload) => showHeadsetBatterySwapNotification(payload),
+  });
+
+  const windowHandlers = createWindowIpcHandlers({
+    getMainWindow: () => mainWindow,
+    hideFlyout: (reason) => hideFlyout(reason),
+    fitFlyoutToContent: (width, height) => fitFlyoutToContent(width, height),
+  });
+
   registerCoreIpcHandlers({
     ipcMain,
     getInitialPayload: async () => ({
@@ -4721,78 +4751,17 @@ function wireIpc(): void {
     },
     getServiceStatus: () => getServiceStatusPayload(),
     sendBackendCommand: (command) => backend!.send(command),
-    previewHeadsetVolume: (payload) => {
-      const volume = toNullablePercent(typeof payload === "number" ? payload : Number(payload));
-      if (volume == null || !isNotifEnabled("headsetVolume")) {
-        return;
-      }
-      void showHeadsetVolumeNotification({ volume });
-    },
+    previewHeadsetVolume: appHandlers.previewHeadsetVolume,
     openSettingsWindow: () => {
       void showSettingsWindow();
     },
-    closeCurrentWindow: (event) => {
-      const win = BrowserWindow.fromWebContents(event.sender);
-      if (!win) {
-        return;
-      }
-      if (win === mainWindow) {
-        hideFlyout("ipc-close-current");
-        return;
-      }
-      win.close();
-    },
-    fitFlyoutToContent: (event, payload) => {
-      if (!mainWindow || mainWindow.isDestroyed()) {
-        return;
-      }
-      if (event.sender !== mainWindow.webContents) {
-        return;
-      }
-      const width = Number(payload?.width);
-      const height = Number(payload?.height);
-      if (!Number.isFinite(width) || !Number.isFinite(height)) {
-        return;
-      }
-      fitFlyoutToContent(width, height);
-    },
+    closeCurrentWindow: windowHandlers.closeCurrentWindow,
+    fitFlyoutToContent: windowHandlers.fitFlyoutToContent,
     setSettings: (partial) => setSettingsHandler(partial),
-    openGg: async () => {
-      const candidates = [
-        "C:\\Program Files\\SteelSeries\\GG\\SteelSeriesGGClient.exe",
-        "C:\\Program Files\\SteelSeries\\GG\\SteelSeriesGG.exe",
-        "C:\\Program Files (x86)\\SteelSeries\\GG\\SteelSeriesGG.exe",
-      ];
-      for (const exe of candidates) {
-        if (fs.existsSync(exe)) {
-          const result = await shell.openPath(exe);
-          return { ok: result === "", detail: result || exe };
-        }
-      }
-      try {
-        await shell.openExternal("steelseriesgg://", { activate: true });
-        return { ok: true, detail: "steelseriesgg://" };
-      } catch (err) {
-        return { ok: false, detail: normalizeError(err) };
-      }
-    },
-    notifyCustom: async (payload) => {
-      const title = String(payload?.title || "").trim() || "Control Centre";
-      const body = String(payload?.body || "").trim() || "Notification";
-      showSystemNotification(title, body);
-      return { ok: true };
-    },
-    notifyBatteryLowTest: async () => {
-      const threshold = clampPercent(settings.batteryLowThreshold);
-      const level = toNullablePercent(cachedState.headset_battery_percent) ?? Math.max(0, threshold - 1);
-      await showBatteryLowNotification({ battery: level, threshold });
-      return { ok: true };
-    },
-    notifyBatterySwapTest: async () => {
-      const level = toNullablePercent(cachedState.headset_battery_percent) ?? 74;
-      await showHeadsetBatterySwapNotification({ headsetBattery: level });
-      return { ok: true };
-    },
+    openGg: appHandlers.openGg,
+    notifyCustom: appHandlers.notifyCustom,
+    notifyBatteryLowTest: appHandlers.notifyBatteryLowTest,
+    notifyBatterySwapTest: appHandlers.notifyBatterySwapTest,
     getMixerData: mixerHandlers.getMixerData,
     setMixerOutput: mixerHandlers.setMixerOutput,
     setMixerAppVolume: mixerHandlers.setMixerAppVolume,
@@ -4828,7 +4797,7 @@ async function createCenteredWindow(page: "settings", width: number, height: num
     title,
     backgroundColor: "#1f1f1f",
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: path.join(__dirname, "..", "preload", "index.js"),
       contextIsolation: true,
       nodeIntegration: false,
       backgroundThrottling: false,

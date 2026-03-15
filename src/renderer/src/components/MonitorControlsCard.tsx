@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { UiSettings } from "@shared/types";
-import type { DdcMonitor } from "../state/store";
+import type { DdcMonitor } from "../stores/store";
 
 interface MonitorControlsCardProps {
   ddcMonitors: DdcMonitor[];

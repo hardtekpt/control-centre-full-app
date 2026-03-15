@@ -66,9 +66,10 @@ npm run build
 
 ## Project Structure
 
-- `electron/`: main process, tray, windows, preload, backend service wiring
-- `renderer/`: React UI, pages/components, SCSS styles
-- `shared/`: shared types/settings schema + merge helpers
-- `electron/services/apis/arctis/`: Sonar + headset integration layer
-- `electron/services/apis/ddc/`: native DDC/CI integration layer
+- `src/main/`: main process, tray, windows, IPC, backend service wiring
+- `src/preload/`: context bridge between renderer and main
+- `src/renderer/`: React UI, pages/components, styles, Vite config
+- `src/shared/`: shared types/settings schema + merge helpers
+- `src/main/services/apis/arctis/`: Sonar + headset integration layer
+- `src/main/services/apis/ddc/`: native DDC/CI integration layer
 - `vendor/node-ddcci/`: vendored DDC native module source
