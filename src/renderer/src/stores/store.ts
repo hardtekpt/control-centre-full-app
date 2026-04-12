@@ -155,6 +155,15 @@ export function useBridgeState() {
     const offOledFrame = window.arctisBridge.onOledServiceFrame((frame) => {
       setOledServiceFrame(frame);
     });
+    // When the window is shown again after being hidden, refresh mixer data in the
+    // background so the UI does not wait for data before becoming visible.
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible" || windowMode !== "dashboard") return;
+      window.arctisBridge.getMixerData().then((mixer) => {
+        if (!disposed) setMixerData(mixer);
+      }).catch(() => undefined);
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       disposed = true;
       offState();
@@ -167,6 +176,7 @@ export function useBridgeState() {
       offOpenApps();
       offDdc();
       offOledFrame();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [windowMode]);
 

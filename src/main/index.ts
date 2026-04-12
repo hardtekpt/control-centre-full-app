@@ -176,8 +176,6 @@ let ddcMonitorRefreshInFlight = false;
 let mainWindowLoaded = false;
 let pendingFlyoutOpen = false;
 let isQuitting = false;
-let isOpeningFlyout = false;
-let flyoutOpeningSince = 0;
 let hasSeenLiveState = false;
 let ddcLastFailure = "";
 let ddcLastStatus: "unknown" | "ok" | "error" = "unknown";
@@ -4106,12 +4104,21 @@ function migrateLegacyState(): void {
   persistNow();
 }
 
+let cachedAccentColor: string | null = null;
+let cachedAccentColorTs = 0;
+
 /**
- * Reads Windows accent color from the registry.
+ * Reads Windows accent color from the registry, caching the result for 60 s.
  */
 async function getWindowsAccentColor(): Promise<string> {
+  const now = Date.now();
+  if (cachedAccentColor !== null && now - cachedAccentColorTs < 60_000) {
+    return cachedAccentColor;
+  }
   if (process.platform !== "win32") {
-    return "#6ab7ff";
+    cachedAccentColor = "#6ab7ff";
+    cachedAccentColorTs = now;
+    return cachedAccentColor;
   }
   return new Promise((resolve) => {
     execFile(
@@ -4119,18 +4126,16 @@ async function getWindowsAccentColor(): Promise<string> {
       ["query", "HKCU\\Software\\Microsoft\\Windows\\DWM", "/v", "ColorizationColor"],
       { windowsHide: true },
       (err, stdout) => {
-        if (err || !stdout) {
-          resolve("#6ab7ff");
-          return;
+        let color = "#6ab7ff";
+        if (!err && stdout) {
+          const match = stdout.match(/0x([0-9A-Fa-f]{8})/);
+          if (match) {
+            color = `#${match[1].slice(2)}`;
+          }
         }
-        const match = stdout.match(/0x([0-9A-Fa-f]{8})/);
-        if (!match) {
-          resolve("#6ab7ff");
-          return;
-        }
-        const argb = match[1];
-        const rrggbb = argb.slice(2);
-        resolve(`#${rrggbb}`);
+        cachedAccentColor = color;
+        cachedAccentColorTs = Date.now();
+        resolve(color);
       },
     );
   });
@@ -4159,30 +4164,31 @@ function showFlyout(): void {
     debugFlyout("showFlyout deferred: mainWindow not loaded");
     return;
   }
-  if (mainWindow.isVisible() || isOpeningFlyout) {
+  if (mainWindow.isVisible()) {
     if (mainWindow.isMinimized()) {
       mainWindow.restore();
     }
-    debugFlyout(`showFlyout focus only: visible=${mainWindow.isVisible()} opening=${isOpeningFlyout}`);
+    debugFlyout("showFlyout focus only: already visible");
     mainWindow.focus();
     return;
   }
-  isOpeningFlyout = true;
   hideIntentUntil = 0;
   lastHideReason = "";
-  flyoutOpeningSince = Date.now();
-  refreshDdcMonitorsOnOpen();
   if (mainWindow.isMinimized()) {
     mainWindow.restore();
   }
   if (settings.useActiveDisplay) {
     positionBottomRight(mainWindow, resolveUiDisplay());
   }
+  // Show the window immediately — UI renders with cached state.
   mainWindow.show();
   mainWindow.focus();
   debugFlyout("showFlyout completed");
-  isOpeningFlyout = false;
-  flyoutOpeningSince = 0;
+  // Refresh data in the background after the window is visible.
+  refreshDdcMonitorsOnOpen();
+  if (backend && isServiceEnabled("sonarApiEnabled")) {
+    void backend.refreshNow();
+  }
 }
 
 /**
@@ -4194,9 +4200,13 @@ function hideFlyout(reason = "unspecified"): void {
     return;
   }
   // Restrict hide triggers to explicit app-driven actions.
-  const allowed = reason === "toggle" || reason === "ipc-close-current" || reason === "open-settings" || reason === "escape-key" || reason === "window-close";
+  const allowed = reason === "toggle" || reason === "ipc-close-current" || reason === "open-settings" || reason === "escape-key" || reason === "window-close" || reason === "blur";
   if (!allowed) {
     debugFlyout(`hideFlyout blocked reason=${reason}`);
+    return;
+  }
+  if (reason === "blur" && flyoutPinned) {
+    debugFlyout("hideFlyout blur blocked: flyout is pinned");
     return;
   }
   hideIntentUntil = Date.now() + 1200;
@@ -4219,14 +4229,6 @@ function toggleFlyout(): void {
     return;
   }
   lastToggleAt = now;
-  if (isOpeningFlyout && flyoutOpeningSince > 0 && Date.now() - flyoutOpeningSince > 5000) {
-    isOpeningFlyout = false;
-    flyoutOpeningSince = 0;
-  }
-  if (isOpeningFlyout) {
-    debugFlyout("toggleFlyout ignored: currently opening");
-    return;
-  }
   debugFlyout(`toggleFlyout visible=${mainWindow.isVisible()}`);
   if (mainWindow.isVisible()) {
     hideFlyout("toggle");
@@ -5118,6 +5120,23 @@ async function createApp(): Promise<void> {
   mainWindow.on("focus", () => {
     debugFlyout("mainWindow focus event");
   });
+  mainWindow.on("blur", () => {
+    debugFlyout("mainWindow blur event");
+    // Never auto-close when the window is pinned.
+    if (flyoutPinned) return;
+    // Small delay so focus has time to settle before we read getFocusedWindow().
+    // This handles cases where blur fires just before another of our own windows
+    // (settings, a notification) takes focus — we must not close in that scenario.
+    setTimeout(() => {
+      if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return;
+      // A deliberate hide was already issued (e.g. toggle, escape) — skip.
+      if (Date.now() < hideIntentUntil) return;
+      // If focus moved to one of our own windows, keep the flyout open.
+      const focused = BrowserWindow.getFocusedWindow();
+      if (focused) return;
+      hideFlyout("blur");
+    }, 50);
+  });
   mainWindow.webContents.on("before-input-event", (_evt, input) => {
     if (input.type !== "keyDown" || input.key !== "Escape" || input.isAutoRepeat) {
       return;
@@ -5152,7 +5171,7 @@ async function createApp(): Promise<void> {
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
 
   tray = createTray({
-    onToggle: () => showFlyout(),
+    onToggle: () => toggleFlyout(),
     onSettings: () => {
       void showSettingsWindow();
     },
@@ -5161,6 +5180,7 @@ async function createApp(): Promise<void> {
   tray.setImage(buildTrayIcon());
 
   nativeTheme.on("updated", async () => {
+    cachedAccentColor = null;
     tray?.setImage(buildTrayIcon());
     const payload = await getThemePayload();
     for (const win of allWindows()) {
