@@ -24,6 +24,7 @@ export interface CreateAppIpcHandlersDeps {
   openExternal: (url: string) => Promise<void>;
   normalizeError: (error: unknown) => string;
   showSystemNotification: (title: string, body: string) => void;
+  showCustomNotificationOnOled: (title: string, body: string) => void;
   getBatteryLowTestPayload: () => BatteryLowNotificationPayload;
   showBatteryLowNotification: (payload: BatteryLowNotificationPayload) => Promise<void>;
   getBatterySwapTestPayload: () => HeadsetBatterySwapNotificationPayload;
@@ -51,6 +52,7 @@ export function createAppIpcHandlers(deps: CreateAppIpcHandlersDeps): AppIpcHand
     openExternal,
     normalizeError,
     showSystemNotification,
+    showCustomNotificationOnOled,
     getBatteryLowTestPayload,
     showBatteryLowNotification,
     getBatterySwapTestPayload,
@@ -90,6 +92,7 @@ export function createAppIpcHandlers(deps: CreateAppIpcHandlersDeps): AppIpcHand
       const title = String(payload?.title ?? "").trim() || "Control Centre";
       const body = String(payload?.body ?? "").trim() || "Notification";
       showSystemNotification(title, body);
+      showCustomNotificationOnOled(title, body);
       return { ok: true };
     },
     notifyBatteryLowTest: async () => {

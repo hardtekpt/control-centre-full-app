@@ -100,6 +100,14 @@ export default function AppSettingsTab({ settings, shortcutDraft, onShortcutDraf
         <input type="checkbox" checked={serviceSettings.ddcEnabled !== false} onChange={(event) => updateServiceSetting("ddcEnabled", event.currentTarget.checked)} />
       </label>
       <label className="form-row">
+        <span>Base Station OLED service</span>
+        <input
+          type="checkbox"
+          checked={serviceSettings.oledDisplayEnabled === true}
+          onChange={(event) => updateServiceSetting("oledDisplayEnabled", event.currentTarget.checked)}
+        />
+      </label>
+      <label className="form-row">
         <span>Notifications service</span>
         <input
           type="checkbox"

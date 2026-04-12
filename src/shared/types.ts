@@ -64,10 +64,20 @@ export interface UiSettings {
     sonarApiEnabled: boolean;
     hidEventsEnabled: boolean;
     ddcEnabled: boolean;
+    oledDisplayEnabled: boolean;
     notificationsEnabled: boolean;
     automaticPresetSwitcherEnabled: boolean;
     shortcutsEnabled: boolean;
     sonarPollIntervalMs: number;
+  };
+  baseStationOled: {
+    refreshIntervalMs: number;
+    showHeadsetVolume: boolean;
+    showMicMuteStatus: boolean;
+    showAncMode: boolean;
+    showBatteryInfo: boolean;
+    showChatMix: boolean;
+    showCustomNotifications: boolean;
   };
   ddc: {
     apiBaseUrl: string;

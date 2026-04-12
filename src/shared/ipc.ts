@@ -36,6 +36,7 @@ export const IPC_EVENT = {
   APP_LOG: "app:log",
   DDC_UPDATE: "ddc:update",
   OPEN_APPS_UPDATE: "open-apps:update",
+  OLED_SERVICE_FRAME: "oled-service:frame",
 } as const;
 
 export type ServiceLifecycleState = "starting" | "running" | "error" | "stopped";
@@ -62,6 +63,10 @@ export interface ServiceStatusPayload {
     endpoint: string;
     managed: boolean;
     pid: number | null;
+  };
+  baseStationOled: {
+    state: ServiceLifecycleState;
+    detail: string;
   };
   notifications: {
     state: ServiceLifecycleState;
@@ -119,6 +124,12 @@ export interface DdcMutateMonitorResponse {
   error?: string;
 }
 
+export interface OledServiceFramePayload {
+  line1: string;
+  line2: string;
+  generatedAtIso: string;
+}
+
 export interface BooleanOkResponse {
   ok: boolean;
 }
@@ -144,6 +155,7 @@ export interface InitialPayload {
   logs: string[];
   ddcMonitors: DdcMonitorPayload[];
   ddcMonitorsUpdatedAt: number | null;
+  baseStationOledFrame: OledServiceFramePayload | null;
   flyoutPinned: boolean;
   serviceStatus: ServiceStatusPayload;
 }
@@ -180,6 +192,7 @@ export interface IpcEventPayloadMap {
   [IPC_EVENT.APP_LOG]: string;
   [IPC_EVENT.DDC_UPDATE]: DdcMonitorPayload[];
   [IPC_EVENT.OPEN_APPS_UPDATE]: RunningAppInfo[];
+  [IPC_EVENT.OLED_SERVICE_FRAME]: OledServiceFramePayload;
 }
 
 export type EventChannel = keyof IpcEventPayloadMap;
@@ -217,4 +230,5 @@ export interface ArctisBridgeApi {
   onLog(cb: (line: string) => void): () => void;
   onOpenApps(cb: (apps: RunningAppInfo[]) => void): () => void;
   onDdcUpdate(cb: (monitors: DdcMonitorPayload[]) => void): () => void;
+  onOledServiceFrame(cb: (frame: OledServiceFramePayload) => void): () => void;
 }

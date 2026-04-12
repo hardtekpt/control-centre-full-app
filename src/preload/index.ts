@@ -46,6 +46,7 @@ const IPC_EVENT = {
   APP_LOG: "app:log",
   DDC_UPDATE: "ddc:update",
   OPEN_APPS_UPDATE: "open-apps:update",
+  OLED_SERVICE_FRAME: "oled-service:frame",
 } as const;
 
 function invoke<C extends InvokeChannel>(channel: C, ...params: InvokeArgs<C>): Promise<InvokeResult<C>> {
@@ -89,6 +90,7 @@ const api: ArctisBridgeApi = {
   onLog: (cb) => subscribe(IPC_EVENT.APP_LOG, cb),
   onDdcUpdate: (cb) => subscribe(IPC_EVENT.DDC_UPDATE, cb),
   onOpenApps: (cb) => subscribe(IPC_EVENT.OPEN_APPS_UPDATE, cb),
+  onOledServiceFrame: (cb) => subscribe(IPC_EVENT.OLED_SERVICE_FRAME, cb),
 };
 
 contextBridge.exposeInMainWorld("arctisBridge", api);

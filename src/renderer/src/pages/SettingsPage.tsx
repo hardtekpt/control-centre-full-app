@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { CHANNELS, type ChannelKey, type NotificationKey, type PresetMap, type RunningAppInfo, type ShortcutAction, type ShortcutBinding, type UiSettings } from "@shared/types";
-import type { DdcMonitor, ServiceStatus } from "../stores/store";
+import type { DdcMonitor, OledServiceFrame, ServiceStatus } from "../stores/store";
 import AboutSettingsTab from "../components/settings/AboutSettingsTab";
 import AppSettingsTab from "../components/settings/AppSettingsTab";
 import AutomaticPresetsSettingsTab, { type NewPresetRuleDraft } from "../components/settings/AutomaticPresetsSettingsTab";
 import DdcSettingsTab from "../components/settings/DdcSettingsTab";
 import GgSonarSettingsTab from "../components/settings/GgSonarSettingsTab";
 import NotificationSettingsTab from "../components/settings/NotificationSettingsTab";
+import OledServiceSettingsTab from "../components/settings/OledServiceSettingsTab";
 import SettingsSidebar from "../components/settings/SettingsSidebar";
 import ShortcutsSettingsTab from "../components/settings/ShortcutsSettingsTab";
 import type { SettingsTab } from "../components/settings/types";
@@ -17,6 +18,7 @@ interface SettingsProps {
   ddcMonitors: DdcMonitor[];
   ddcMonitorsUpdatedAt: number | null;
   ddcError: string | null;
+  oledServiceFrame: OledServiceFrame | null;
   logs: string[];
   lastStatus: string;
   lastError: string | null;
@@ -124,6 +126,7 @@ export default function SettingsPage({
   ddcMonitors,
   ddcMonitorsUpdatedAt,
   ddcError,
+  oledServiceFrame,
   logs,
   lastStatus,
   lastError,
@@ -537,6 +540,10 @@ export default function SettingsPage({
         )}
 
         {tab === "ggSonar" && <GgSonarSettingsTab settings={settings} onUpdate={onUpdate} onToggleChannel={toggleChannel} />}
+
+        {tab === "oledService" && (
+          <OledServiceSettingsTab settings={settings} oledServiceFrame={oledServiceFrame} onUpdate={onUpdate} />
+        )}
 
         {tab === "notifications" && (
           <NotificationSettingsTab

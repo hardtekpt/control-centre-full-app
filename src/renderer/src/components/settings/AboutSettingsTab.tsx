@@ -14,6 +14,7 @@ export default function AboutSettingsTab({ lastStatus, lastError, serviceStatus,
   const sonarLogs = logs.filter((line) => line.includes("[Sonar GG]"));
   const hidLogs = logs.filter((line) => line.includes("[HID Events]") || line.toLowerCase().includes("base-station"));
   const ddcLogs = logs.filter((line) => line.includes("[DDC]") || line.includes("DDC"));
+  const oledServiceLogs = logs.filter((line) => line.includes("[Base Station OLED]"));
   const notificationLogs = logs.filter((line) => line.includes("[Notifications]"));
   const presetLogs = logs.filter((line) => line.includes("[Auto Preset Switcher]") || line.includes("AutomaticPresetSwitcher"));
   const shortcutLogs = logs.filter((line) => line.includes("[Shortcuts]") || line.includes("Shortcut"));
@@ -47,6 +48,12 @@ export default function AboutSettingsTab({ lastStatus, lastError, serviceStatus,
           <div className="service-detail">Endpoint: {serviceStatus.ddcApi.endpoint}</div>
           <div className="service-detail">Managed: {serviceStatus.ddcApi.managed ? "yes" : "no"}</div>
           <div className="service-detail">PID: {serviceStatus.ddcApi.pid ?? "n/a"}</div>
+        </div>
+
+        <div className="service-status-card">
+          <div className="service-title">Base Station OLED</div>
+          <div className={`service-state ${serviceStatus.baseStationOled.state}`}>{serviceStatus.baseStationOled.state}</div>
+          <div className="service-detail">{serviceStatus.baseStationOled.detail}</div>
         </div>
 
         <div className="service-status-card">
@@ -98,6 +105,18 @@ export default function AboutSettingsTab({ lastStatus, lastError, serviceStatus,
           {ddcLogs.length === 0 && <div className="log-line">No logs yet.</div>}
           {ddcLogs.map((line, index) => (
             <div className="log-line" key={`ddc-${index}-${line.slice(0, 12)}`}>
+              {line}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="logs-panel">
+        <div className="logs-header">Logs: Base Station OLED</div>
+        <div className="logs-list">
+          {oledServiceLogs.length === 0 && <div className="log-line">No logs yet.</div>}
+          {oledServiceLogs.map((line, index) => (
+            <div className="log-line" key={`oled-service-${index}-${line.slice(0, 12)}`}>
               {line}
             </div>
           ))}

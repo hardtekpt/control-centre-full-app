@@ -9,6 +9,7 @@ import { ShortcutService } from "./services/shortcuts/service";
 import { createPersistenceService, type PersistedAppState } from "./services/persistence/service";
 import { createNotificationTimerService, type NotificationTimerKey } from "./services/notifications/timerService";
 import { createNotificationWindowService } from "./services/notifications/windowService";
+import { BaseStationOledService } from "./services/oled/service";
 import {
   PresetSwitcherService as PresetSwitcherServiceImpl,
   PresetSwitcherServiceConfig,
@@ -148,6 +149,22 @@ const presetSwitcherService = new (PresetSwitcherServiceImpl as PresetSwitcherSe
     pushServiceLog("presetSwitcher", message);
   },
 });
+const baseStationOledService = new BaseStationOledService();
+baseStationOledService.on("status", (text: string) => {
+  pushServiceLog("oledDisplay", text);
+});
+baseStationOledService.on("frame", (frame: { line1: string; line2: string; generatedAtIso: string }) => {
+  pushServiceLog("oledDisplay", `Frame -> ${frame.line1} | ${frame.line2}`);
+  for (const win of allWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send(IPC_EVENT.OLED_SERVICE_FRAME, frame);
+    }
+  }
+});
+baseStationOledService.on("error", (text: string) => {
+  pushServiceLog("oledDisplay", `ERROR: ${text}`);
+});
+
 let lastStatusText = "ready";
 let lastErrorText: string | null = null;
 let logBuffer: string[] = [];
@@ -247,12 +264,20 @@ interface MixerApp {
 
 type DdcMonitor = DdcMonitorPayload;
 
-type RuntimeServiceKey = "sonarApi" | "hidEvents" | "ddcApi" | "notifications" | "presetSwitcher" | "shortcuts";
+type RuntimeServiceKey =
+  | "sonarApi"
+  | "hidEvents"
+  | "ddcApi"
+  | "oledDisplay"
+  | "notifications"
+  | "presetSwitcher"
+  | "shortcuts";
 
 const SERVICE_LOG_LABELS: Record<RuntimeServiceKey, string> = {
   sonarApi: "Sonar GG",
   hidEvents: "HID Events",
   ddcApi: "DDC",
+  oledDisplay: "Base Station OLED",
   notifications: "Notifications",
   presetSwitcher: "Auto Preset Switcher",
   shortcuts: "Shortcuts",
@@ -386,6 +411,7 @@ type ToggleServiceSettingKey =
   | "sonarApiEnabled"
   | "hidEventsEnabled"
   | "ddcEnabled"
+  | "oledDisplayEnabled"
   | "notificationsEnabled"
   | "automaticPresetSwitcherEnabled"
   | "shortcutsEnabled";
@@ -413,6 +439,7 @@ function getServiceStatusPayload(): ServiceStatusPayload {
   const sonarEnabled = isServiceEnabled("sonarApiEnabled");
   const hidEnabled = isServiceEnabled("hidEventsEnabled");
   const ddcEnabled = isServiceEnabled("ddcEnabled");
+  const oledEnabled = isServiceEnabled("oledDisplayEnabled");
   const notificationsEnabled = isServiceEnabled("notificationsEnabled");
   const presetEnabled = isServiceEnabled("automaticPresetSwitcherEnabled");
   const shortcutsEnabled = isServiceEnabled("shortcutsEnabled");
@@ -441,6 +468,23 @@ function getServiceStatusPayload(): ServiceStatusPayload {
 
   const ddcState: ServiceStatusPayload["ddcApi"]["state"] = !ddcEnabled ? "stopped" : ddcStatus.state;
   const ddcDetail = !ddcEnabled ? "Disabled in settings." : ddcStatus.detail;
+
+  const oledError = baseStationOledService.getLastError();
+  const oledState: ServiceStatusPayload["baseStationOled"]["state"] = !oledEnabled
+    ? "stopped"
+    : oledError
+      ? "error"
+      : baseStationOledService.isRunning()
+        ? "running"
+        : "starting";
+  const lastOledFrame = baseStationOledService.getLastFrame();
+  const oledDetail = !oledEnabled
+    ? "Disabled in settings."
+    : oledError
+      ? oledError
+    : lastOledFrame
+      ? `Last frame pushed at ${new Date(lastOledFrame.generatedAtIso).toLocaleTimeString()}.`
+      : "Starting OLED writer...";
 
   const notificationsState: ServiceStatusPayload["notifications"]["state"] = notificationsEnabled ? "running" : "stopped";
   const notificationsDetail = notificationsEnabled
@@ -484,6 +528,10 @@ function getServiceStatusPayload(): ServiceStatusPayload {
       endpoint: ddcStatus.endpoint,
       managed: ddcStatus.managed,
       pid: ddcStatus.pid,
+    },
+    baseStationOled: {
+      state: oledState,
+      detail: oledDetail,
     },
     notifications: {
       state: notificationsState,
@@ -4217,6 +4265,26 @@ function applyRuntimeServiceSettings(previousSettings: UiSettings | null = null)
     }
   }
 
+  baseStationOledService.updateState(cachedState);
+  baseStationOledService.configure({
+    enabled: isServiceEnabled("oledDisplayEnabled"),
+    refreshIntervalMs: settings.baseStationOled.refreshIntervalMs,
+    showHeadsetVolume: settings.baseStationOled.showHeadsetVolume,
+    showMicMuteStatus: settings.baseStationOled.showMicMuteStatus,
+    showAncMode: settings.baseStationOled.showAncMode,
+    showBatteryInfo: settings.baseStationOled.showBatteryInfo,
+    showChatMix: settings.baseStationOled.showChatMix,
+    showCustomNotifications: settings.baseStationOled.showCustomNotifications,
+    customNotificationDurationMs: Math.max(2, settings.notificationTimeout) * 1000,
+  });
+  if (isServiceEnabled("oledDisplayEnabled")) {
+    if (!baseStationOledService.isRunning()) {
+      baseStationOledService.start();
+    }
+  } else if (baseStationOledService.isRunning()) {
+    baseStationOledService.stop();
+  }
+
   if (isServiceEnabled("automaticPresetSwitcherEnabled")) {
     presetSwitcherService.start();
   } else {
@@ -4255,6 +4323,7 @@ function applyRuntimeServiceSettings(previousSettings: UiSettings | null = null)
     );
     pushServiceLog("hidEvents", isServiceEnabled("hidEventsEnabled") ? "started." : "stopped.");
     pushServiceLog("ddcApi", isServiceEnabled("ddcEnabled") ? "started." : "stopped.");
+    pushServiceLog("oledDisplay", isServiceEnabled("oledDisplayEnabled") ? "started." : "stopped.");
     pushServiceLog("notifications", isServiceEnabled("notificationsEnabled") ? "started." : "stopped.");
     pushServiceLog(
       "presetSwitcher",
@@ -4276,6 +4345,23 @@ function applyRuntimeServiceSettings(previousSettings: UiSettings | null = null)
   }
   if (prev.ddcEnabled !== next.ddcEnabled) {
     pushServiceLog("ddcApi", next.ddcEnabled ? "started." : "stopped.");
+  }
+  if (prev.oledDisplayEnabled !== next.oledDisplayEnabled) {
+    pushServiceLog("oledDisplay", next.oledDisplayEnabled ? "started." : "stopped.");
+  }
+  if (
+    previousSettings.baseStationOled.refreshIntervalMs !== settings.baseStationOled.refreshIntervalMs ||
+    previousSettings.baseStationOled.showHeadsetVolume !== settings.baseStationOled.showHeadsetVolume ||
+    previousSettings.baseStationOled.showMicMuteStatus !== settings.baseStationOled.showMicMuteStatus ||
+    previousSettings.baseStationOled.showAncMode !== settings.baseStationOled.showAncMode ||
+    previousSettings.baseStationOled.showBatteryInfo !== settings.baseStationOled.showBatteryInfo ||
+    previousSettings.baseStationOled.showChatMix !== settings.baseStationOled.showChatMix ||
+    previousSettings.baseStationOled.showCustomNotifications !== settings.baseStationOled.showCustomNotifications
+  ) {
+    pushServiceLog(
+      "oledDisplay",
+      `Config updated (interval=${Math.round(settings.baseStationOled.refreshIntervalMs / 1000)}s).`,
+    );
   }
   if (prev.notificationsEnabled !== next.notificationsEnabled) {
     pushServiceLog("notifications", next.notificationsEnabled ? "started." : "stopped.");
@@ -4632,6 +4718,7 @@ function wireBackend(): void {
   backend.on("state", (state: AppState) => {
     const previous = cachedState;
     cachedState = applyUsbInputInference(harmonizeLiveState(cachedState, state));
+    baseStationOledService.updateState(cachedState);
     if (hasSeenLiveState) {
       notifyStateChanges(previous, cachedState);
     } else {
@@ -4840,6 +4927,7 @@ function wireIpc(): void {
     openExternal: (url) => shell.openExternal(url, { activate: true }),
     normalizeError: (error) => normalizeError(error),
     showSystemNotification: (title, body) => showSystemNotification(title, body),
+    showCustomNotificationOnOled: (title, body) => baseStationOledService.showCustomNotification(title, body),
     getBatteryLowTestPayload: () => {
       const threshold = clampPercent(settings.batteryLowThreshold);
       const level = toNullablePercent(cachedState.headset_battery_percent) ?? Math.max(0, threshold - 1);
@@ -4872,6 +4960,7 @@ function wireIpc(): void {
       logs: logBuffer,
       ddcMonitors: ddcMonitorsCache,
       ddcMonitorsUpdatedAt: ddcMonitorsCacheTs || null,
+      baseStationOledFrame: baseStationOledService.getLastFrame(),
       flyoutPinned,
       serviceStatus: getServiceStatusPayload(),
     }),
@@ -5169,6 +5258,7 @@ app.on("before-quit", () => {
   notificationWindowService.closeAll();
   stopDdcMonitorRefresh();
   presetSwitcherService.stop();
+  baseStationOledService.stop();
   clearNotificationTimers();
   resetNotificationTransientState();
   destroyNotificationOsdWindows();
