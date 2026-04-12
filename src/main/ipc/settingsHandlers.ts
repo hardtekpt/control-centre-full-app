@@ -92,9 +92,7 @@ export function createSettingsIpcHandler(deps: CreateSettingsIpcHandlerDeps): (p
 
     applyRuntimeServiceSettings(currentSettings, next);
 
-    if (partial.ddc?.pollIntervalMs !== undefined && Number(partial.ddc?.pollIntervalMs) !== currentSettings.ddc.pollIntervalMs) {
-      restartDdcMonitorRefresh();
-    } else if (partial.ddc) {
+    if (partial.ddc) {
       restartDdcMonitorRefresh();
     }
 

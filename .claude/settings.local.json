@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(grep -E '\\\\.ts$')"
+      "Bash(grep -E '\\\\.ts$')",
+      "Bash(npm run:*)"
     ]
   }
 }

@@ -253,10 +253,8 @@ $apps | ConvertTo-Json -Depth 3 -Compress
       }
       if (current !== presetId) {
         this.config.applyPreset(channel, presetId);
-        this.lastAppliedByChannel[channel] = signature;
-      } else {
-        this.lastAppliedByChannel[channel] = signature;
       }
+      this.lastAppliedByChannel[channel] = signature;
     }
   }
 

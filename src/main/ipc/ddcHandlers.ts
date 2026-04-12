@@ -63,6 +63,34 @@ export function createDdcIpcHandlers(deps: CreateDdcIpcHandlersDeps): DdcIpcHand
     broadcastDdcUpdate();
   }
 
+  /**
+   * Calls a DDC service method, updates the monitor cache, and returns a typed result.
+   * Centralises the try/catch and log pattern shared by all mutating DDC handlers.
+   */
+  async function mutateDdcMonitor(
+    monitorId: number,
+    action: string,
+    serviceCall: (service: DdcServiceLike) => unknown,
+    successLog: string,
+  ): Promise<DdcMutateMonitorResponse> {
+    try {
+      const service = getDdcService();
+      if (!service) {
+        throw new Error("DDC native service is not initialized.");
+      }
+      const monitor = serviceCall(service) as DdcMonitorPayload;
+      updateMonitorCache(monitorId, monitor);
+      pushLog(successLog);
+      debugDdc(`ipc ${action} ok monitor=${monitorId}`);
+      return { ok: true, monitor };
+    } catch (error) {
+      const detail = normalizeError(error);
+      debugDdc(`ipc ${action} error monitor=${monitorId} ${detail}`);
+      pushLog(`ERROR: DDC ${action} failed for monitor ${monitorId}: ${detail}`);
+      return { ok: false, error: detail };
+    }
+  }
+
   return {
     getDdcMonitors: async () => {
       debugDdc("ipc ddc:get-monitors begin");
@@ -94,22 +122,12 @@ export function createDdcIpcHandlers(deps: CreateDdcIpcHandlersDeps): DdcIpcHand
         debugDdc("ipc ddc:set-brightness rejected invalid monitor id");
         return { ok: false, error: "Invalid monitor id." };
       }
-      try {
-        const service = getDdcService();
-        if (!service) {
-          throw new Error("DDC native service is not initialized.");
-        }
-        const monitor = service.setBrightness(monitorId, value) as DdcMonitorPayload;
-        updateMonitorCache(monitorId, monitor);
-        pushLog(`DDC: monitor ${monitorId} brightness set to ${value}.`);
-        debugDdc(`ipc ddc:set-brightness ok monitor=${monitorId}`);
-        return { ok: true, monitor };
-      } catch (error) {
-        const detail = normalizeError(error);
-        debugDdc(`ipc ddc:set-brightness error monitor=${monitorId} ${detail}`);
-        pushLog(`ERROR: DDC set brightness failed for monitor ${monitorId}: ${detail}`);
-        return { ok: false, error: detail };
-      }
+      return mutateDdcMonitor(
+        monitorId,
+        "ddc:set-brightness",
+        (svc) => svc.setBrightness(monitorId, value),
+        `DDC: monitor ${monitorId} brightness set to ${value}.`,
+      );
     },
     setDdcInputSource: async (payload) => {
       const monitorId = Number(payload?.monitorId);
@@ -119,22 +137,12 @@ export function createDdcIpcHandlers(deps: CreateDdcIpcHandlersDeps): DdcIpcHand
         debugDdc("ipc ddc:set-input-source rejected invalid payload");
         return { ok: false, error: "Invalid monitor id or input value." };
       }
-      try {
-        const service = getDdcService();
-        if (!service) {
-          throw new Error("DDC native service is not initialized.");
-        }
-        const monitor = service.setInputSource(monitorId, value) as DdcMonitorPayload;
-        updateMonitorCache(monitorId, monitor);
-        pushLog(`DDC: monitor ${monitorId} input set to ${value}.`);
-        debugDdc(`ipc ddc:set-input-source ok monitor=${monitorId}`);
-        return { ok: true, monitor };
-      } catch (error) {
-        const detail = normalizeError(error);
-        debugDdc(`ipc ddc:set-input-source error monitor=${monitorId} ${detail}`);
-        pushLog(`ERROR: DDC set input failed for monitor ${monitorId}: ${detail}`);
-        return { ok: false, error: detail };
-      }
+      return mutateDdcMonitor(
+        monitorId,
+        "ddc:set-input-source",
+        (svc) => svc.setInputSource(monitorId, value),
+        `DDC: monitor ${monitorId} input set to ${value}.`,
+      );
     },
   };
 }

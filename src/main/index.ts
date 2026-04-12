@@ -733,6 +733,14 @@ function scheduleNotificationClose(timerKey: NotificationTimerKey, win: BrowserW
 }
 
 /**
+ * Schedules a notification close using the user-configured timeout.
+ * All notification types except connectivity share this behaviour.
+ */
+function scheduleStandardNotificationClose(timerKey: NotificationTimerKey, win: BrowserWindow): void {
+  scheduleNotificationClose(timerKey, win, Math.max(2, settings.notificationTimeout) * 1000);
+}
+
+/**
  * Notification timer clear helpers.
  * These keep call sites explicit about which UI surface is being controlled.
  */
@@ -787,34 +795,34 @@ function clearHeadsetBatterySwapDelayTimer(): void {
 
 /**
  * Notification close scheduling helpers.
- * All notifications except connectivity use the user-configured timeout.
+ * All notifications except connectivity delegate to scheduleStandardNotificationClose.
  */
 function scheduleHeadsetVolumeNotificationClose(win: BrowserWindow): void {
-  scheduleNotificationClose("headsetVolume", win, Math.max(2, settings.notificationTimeout) * 1000);
+  scheduleStandardNotificationClose("headsetVolume", win);
 }
 
 function scheduleMicMuteNotificationClose(win: BrowserWindow): void {
-  scheduleNotificationClose("micMute", win, Math.max(2, settings.notificationTimeout) * 1000);
+  scheduleStandardNotificationClose("micMute", win);
 }
 
 function scheduleOledNotificationClose(win: BrowserWindow): void {
-  scheduleNotificationClose("oled", win, Math.max(2, settings.notificationTimeout) * 1000);
+  scheduleStandardNotificationClose("oled", win);
 }
 
 function scheduleSidetoneNotificationClose(win: BrowserWindow): void {
-  scheduleNotificationClose("sidetone", win, Math.max(2, settings.notificationTimeout) * 1000);
+  scheduleStandardNotificationClose("sidetone", win);
 }
 
 function schedulePresetChangeNotificationClose(win: BrowserWindow): void {
-  scheduleNotificationClose("presetChange", win, Math.max(2, settings.notificationTimeout) * 1000);
+  scheduleStandardNotificationClose("presetChange", win);
 }
 
 function scheduleUsbInputNotificationClose(win: BrowserWindow): void {
-  scheduleNotificationClose("usbInput", win, Math.max(2, settings.notificationTimeout) * 1000);
+  scheduleStandardNotificationClose("usbInput", win);
 }
 
 function scheduleAncModeNotificationClose(win: BrowserWindow): void {
-  scheduleNotificationClose("ancMode", win, Math.max(2, settings.notificationTimeout) * 1000);
+  scheduleStandardNotificationClose("ancMode", win);
 }
 
 function scheduleConnectivityNotificationClose(win: BrowserWindow): void {
@@ -829,19 +837,34 @@ function scheduleConnectivityNotificationClose(win: BrowserWindow): void {
 }
 
 function scheduleBatteryLowNotificationClose(win: BrowserWindow): void {
-  scheduleNotificationClose("batteryLow", win, Math.max(2, settings.notificationTimeout) * 1000);
+  scheduleStandardNotificationClose("batteryLow", win);
 }
 
 function scheduleBaseBatteryStatusNotificationClose(win: BrowserWindow): void {
-  scheduleNotificationClose("baseBatteryStatus", win, Math.max(2, settings.notificationTimeout) * 1000);
+  scheduleStandardNotificationClose("baseBatteryStatus", win);
 }
 
 function scheduleHeadsetBatterySwapNotificationClose(win: BrowserWindow): void {
-  scheduleNotificationClose("headsetBatterySwap", win, Math.max(2, settings.notificationTimeout) * 1000);
+  scheduleStandardNotificationClose("headsetBatterySwap", win);
 }
 
 function clampNumber(value: number, low: number, high: number): number {
   return Math.min(high, Math.max(low, value));
+}
+
+/**
+ * Resolves a square OSD layout centered horizontally at the bottom of the work area.
+ * All square notification overlays share this geometry — only the base size differs.
+ */
+function resolveSquareOsdLayout(baseSize: number, minSize: number): OsdLayout {
+  const display = resolveUiDisplay();
+  const workArea = display.workArea;
+  const resolutionScale = clampNumber(Math.min(workArea.width / 1920, workArea.height / 1080), 0.82, 1.18);
+  const size = Math.max(minSize, Math.round(baseSize * resolutionScale));
+  const margin = Math.max(10, Math.round(12 * resolutionScale));
+  const x = Math.round(workArea.x + (workArea.width - size) / 2);
+  const y = workArea.y + workArea.height - size - margin;
+  return { displayId: display.id, x, y, width: size, height: size, uiScale: resolutionScale };
 }
 
 function resolveFlyoutFitLimits(): { maxWidth: number; maxHeight: number } {
@@ -900,111 +923,27 @@ function resolveHeadsetVolumeOsdLayout(showChatMix: boolean): OsdLayout {
 }
 
 function resolveMicMuteOsdLayout(): OsdLayout {
-  const display = resolveUiDisplay();
-  const workArea = display.workArea;
-  const resolutionScale = clampNumber(Math.min(workArea.width / 1920, workArea.height / 1080), 0.82, 1.18);
-  const size = Math.max(52, Math.round(MIC_MUTE_OSD_BASE_SIZE * resolutionScale));
-  const margin = Math.max(10, Math.round(12 * resolutionScale));
-  const x = Math.round(workArea.x + (workArea.width - size) / 2);
-  const y = workArea.y + workArea.height - size - margin;
-  return {
-    displayId: display.id,
-    x,
-    y,
-    width: size,
-    height: size,
-    uiScale: resolutionScale,
-  };
+  return resolveSquareOsdLayout(MIC_MUTE_OSD_BASE_SIZE, 52);
 }
 
 function resolveAncModeOsdLayout(): OsdLayout {
-  const display = resolveUiDisplay();
-  const workArea = display.workArea;
-  const resolutionScale = clampNumber(Math.min(workArea.width / 1920, workArea.height / 1080), 0.82, 1.18);
-  const size = Math.max(52, Math.round(ANC_MODE_OSD_BASE_SIZE * resolutionScale));
-  const margin = Math.max(10, Math.round(12 * resolutionScale));
-  const x = Math.round(workArea.x + (workArea.width - size) / 2);
-  const y = workArea.y + workArea.height - size - margin;
-  return {
-    displayId: display.id,
-    x,
-    y,
-    width: size,
-    height: size,
-    uiScale: resolutionScale,
-  };
+  return resolveSquareOsdLayout(ANC_MODE_OSD_BASE_SIZE, 52);
 }
 
 function resolveConnectivityOsdLayout(): OsdLayout {
-  const display = resolveUiDisplay();
-  const workArea = display.workArea;
-  const resolutionScale = clampNumber(Math.min(workArea.width / 1920, workArea.height / 1080), 0.82, 1.18);
-  const size = Math.max(86, Math.round(CONNECTIVITY_OSD_BASE_SIZE * resolutionScale));
-  const margin = Math.max(10, Math.round(12 * resolutionScale));
-  const x = Math.round(workArea.x + (workArea.width - size) / 2);
-  const y = workArea.y + workArea.height - size - margin;
-  return {
-    displayId: display.id,
-    x,
-    y,
-    width: size,
-    height: size,
-    uiScale: resolutionScale,
-  };
+  return resolveSquareOsdLayout(CONNECTIVITY_OSD_BASE_SIZE, 86);
 }
 
 function resolveBatteryLowOsdLayout(): OsdLayout {
-  const display = resolveUiDisplay();
-  const workArea = display.workArea;
-  const resolutionScale = clampNumber(Math.min(workArea.width / 1920, workArea.height / 1080), 0.82, 1.18);
-  const size = Math.max(88, Math.round(BATTERY_LOW_OSD_BASE_SIZE * resolutionScale));
-  const margin = Math.max(10, Math.round(12 * resolutionScale));
-  const x = Math.round(workArea.x + (workArea.width - size) / 2);
-  const y = workArea.y + workArea.height - size - margin;
-  return {
-    displayId: display.id,
-    x,
-    y,
-    width: size,
-    height: size,
-    uiScale: resolutionScale,
-  };
+  return resolveSquareOsdLayout(BATTERY_LOW_OSD_BASE_SIZE, 88);
 }
 
 function resolveOledOsdLayout(): OsdLayout {
-  const display = resolveUiDisplay();
-  const workArea = display.workArea;
-  const resolutionScale = clampNumber(Math.min(workArea.width / 1920, workArea.height / 1080), 0.82, 1.18);
-  const size = Math.max(92, Math.round(OLED_OSD_BASE_SIZE * resolutionScale));
-  const margin = Math.max(10, Math.round(12 * resolutionScale));
-  const x = Math.round(workArea.x + (workArea.width - size) / 2);
-  const y = workArea.y + workArea.height - size - margin;
-  return {
-    displayId: display.id,
-    x,
-    y,
-    width: size,
-    height: size,
-    uiScale: resolutionScale,
-  };
+  return resolveSquareOsdLayout(OLED_OSD_BASE_SIZE, 92);
 }
 
 function resolveSidetoneOsdLayout(): OsdLayout {
-  const display = resolveUiDisplay();
-  const workArea = display.workArea;
-  const resolutionScale = clampNumber(Math.min(workArea.width / 1920, workArea.height / 1080), 0.82, 1.18);
-  const size = Math.max(92, Math.round(SIDETONE_OSD_BASE_SIZE * resolutionScale));
-  const margin = Math.max(10, Math.round(12 * resolutionScale));
-  const x = Math.round(workArea.x + (workArea.width - size) / 2);
-  const y = workArea.y + workArea.height - size - margin;
-  return {
-    displayId: display.id,
-    x,
-    y,
-    width: size,
-    height: size,
-    uiScale: resolutionScale,
-  };
+  return resolveSquareOsdLayout(SIDETONE_OSD_BASE_SIZE, 92);
 }
 
 function resolvePresetChangeOsdLayout(): OsdLayout {
@@ -1027,57 +966,15 @@ function resolvePresetChangeOsdLayout(): OsdLayout {
 }
 
 function resolveUsbInputOsdLayout(): OsdLayout {
-  const display = resolveUiDisplay();
-  const workArea = display.workArea;
-  const resolutionScale = clampNumber(Math.min(workArea.width / 1920, workArea.height / 1080), 0.82, 1.18);
-  const size = Math.max(86, Math.round(USB_INPUT_OSD_BASE_SIZE * resolutionScale));
-  const margin = Math.max(10, Math.round(12 * resolutionScale));
-  const x = Math.round(workArea.x + (workArea.width - size) / 2);
-  const y = workArea.y + workArea.height - size - margin;
-  return {
-    displayId: display.id,
-    x,
-    y,
-    width: size,
-    height: size,
-    uiScale: resolutionScale,
-  };
+  return resolveSquareOsdLayout(USB_INPUT_OSD_BASE_SIZE, 86);
 }
 
 function resolveBaseBatteryStatusOsdLayout(): OsdLayout {
-  const display = resolveUiDisplay();
-  const workArea = display.workArea;
-  const resolutionScale = clampNumber(Math.min(workArea.width / 1920, workArea.height / 1080), 0.82, 1.18);
-  const size = Math.max(82, Math.round(BASE_BATTERY_STATUS_OSD_BASE_SIZE * resolutionScale));
-  const margin = Math.max(10, Math.round(12 * resolutionScale));
-  const x = Math.round(workArea.x + (workArea.width - size) / 2);
-  const y = workArea.y + workArea.height - size - margin;
-  return {
-    displayId: display.id,
-    x,
-    y,
-    width: size,
-    height: size,
-    uiScale: resolutionScale,
-  };
+  return resolveSquareOsdLayout(BASE_BATTERY_STATUS_OSD_BASE_SIZE, 82);
 }
 
 function resolveHeadsetBatterySwapOsdLayout(): OsdLayout {
-  const display = resolveUiDisplay();
-  const workArea = display.workArea;
-  const resolutionScale = clampNumber(Math.min(workArea.width / 1920, workArea.height / 1080), 0.82, 1.18);
-  const size = Math.max(90, Math.round(HEADSET_BATTERY_SWAP_OSD_BASE_SIZE * resolutionScale));
-  const margin = Math.max(10, Math.round(12 * resolutionScale));
-  const x = Math.round(workArea.x + (workArea.width - size) / 2);
-  const y = workArea.y + workArea.height - size - margin;
-  return {
-    displayId: display.id,
-    x,
-    y,
-    width: size,
-    height: size,
-    uiScale: resolutionScale,
-  };
+  return resolveSquareOsdLayout(HEADSET_BATTERY_SWAP_OSD_BASE_SIZE, 90);
 }
 
 function updateHeadsetVolumeNotificationScale(win: BrowserWindow, uiScale: number): void {
@@ -4200,8 +4097,8 @@ function hideFlyout(reason = "unspecified"): void {
     return;
   }
   // Restrict hide triggers to explicit app-driven actions.
-  const allowed = reason === "toggle" || reason === "ipc-close-current" || reason === "open-settings" || reason === "escape-key" || reason === "window-close" || reason === "blur";
-  if (!allowed) {
+  const HIDE_REASONS = new Set(["toggle", "ipc-close-current", "open-settings", "escape-key", "window-close", "blur"]);
+  if (!HIDE_REASONS.has(reason)) {
     debugFlyout(`hideFlyout blocked reason=${reason}`);
     return;
   }
@@ -4718,17 +4615,21 @@ function wireBackend(): void {
     pushServiceLog("hidEvents", text);
   });
   backend.on("state", (state: AppState) => {
-    const previous = cachedState;
-    cachedState = applyUsbInputInference(harmonizeLiveState(cachedState, state));
-    baseStationOledService.updateState(cachedState);
-    if (hasSeenLiveState) {
-      notifyStateChanges(previous, cachedState);
-    } else {
-      hasSeenLiveState = true;
-    }
-    schedulePersist();
-    for (const win of allWindows()) {
-      win.webContents.send(IPC_EVENT.BACKEND_STATE, cachedState);
+    try {
+      const previous = cachedState;
+      cachedState = applyUsbInputInference(harmonizeLiveState(cachedState, state));
+      baseStationOledService.updateState(cachedState);
+      if (hasSeenLiveState) {
+        notifyStateChanges(previous, cachedState);
+      } else {
+        hasSeenLiveState = true;
+      }
+      schedulePersist();
+      for (const win of allWindows()) {
+        win.webContents.send(IPC_EVENT.BACKEND_STATE, cachedState);
+      }
+    } catch (err) {
+      pushLog(`[ERROR] Failed to process backend state update: ${normalizeError(err)}`);
     }
   });
   backend.on("presets", (presets: PresetMap) => {

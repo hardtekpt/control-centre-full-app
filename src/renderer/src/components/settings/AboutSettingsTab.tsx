@@ -7,6 +7,28 @@ interface AboutSettingsTabProps {
   logs: string[];
 }
 
+interface LogPanelProps {
+  title: string;
+  lines: string[];
+  keyPrefix: string;
+}
+
+function LogPanel({ title, lines, keyPrefix }: LogPanelProps) {
+  return (
+    <div className="logs-panel">
+      <div className="logs-header">{title}</div>
+      <div className="logs-list">
+        {lines.length === 0 && <div className="log-line">No logs yet.</div>}
+        {lines.map((line, index) => (
+          <div className="log-line" key={`${keyPrefix}-${index}-${line.slice(0, 12)}`}>
+            {line}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /**
  * Basic app info, service diagnostics, and runtime logs.
  */
@@ -75,89 +97,13 @@ export default function AboutSettingsTab({ lastStatus, lastError, serviceStatus,
         </div>
       </div>
 
-      <div className="logs-panel">
-        <div className="logs-header">Logs: Sonar GG API</div>
-        <div className="logs-list">
-          {sonarLogs.length === 0 && <div className="log-line">No logs yet.</div>}
-          {sonarLogs.map((line, index) => (
-            <div className="log-line" key={`${index}-${line.slice(0, 12)}`}>
-              {line}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="logs-panel">
-        <div className="logs-header">Logs: HID Events</div>
-        <div className="logs-list">
-          {hidLogs.length === 0 && <div className="log-line">No logs yet.</div>}
-          {hidLogs.map((line, index) => (
-            <div className="log-line" key={`hid-${index}-${line.slice(0, 12)}`}>
-              {line}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="logs-panel">
-        <div className="logs-header">Logs: DDC</div>
-        <div className="logs-list">
-          {ddcLogs.length === 0 && <div className="log-line">No logs yet.</div>}
-          {ddcLogs.map((line, index) => (
-            <div className="log-line" key={`ddc-${index}-${line.slice(0, 12)}`}>
-              {line}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="logs-panel">
-        <div className="logs-header">Logs: Base Station OLED</div>
-        <div className="logs-list">
-          {oledServiceLogs.length === 0 && <div className="log-line">No logs yet.</div>}
-          {oledServiceLogs.map((line, index) => (
-            <div className="log-line" key={`oled-service-${index}-${line.slice(0, 12)}`}>
-              {line}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="logs-panel">
-        <div className="logs-header">Logs: Notifications</div>
-        <div className="logs-list">
-          {notificationLogs.length === 0 && <div className="log-line">No logs yet.</div>}
-          {notificationLogs.map((line, index) => (
-            <div className="log-line" key={`notifications-${index}-${line.slice(0, 12)}`}>
-              {line}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="logs-panel">
-        <div className="logs-header">Logs: Automatic Preset Switcher</div>
-        <div className="logs-list">
-          {presetLogs.length === 0 && <div className="log-line">No logs yet.</div>}
-          {presetLogs.map((line, index) => (
-            <div className="log-line" key={`preset-${index}-${line.slice(0, 12)}`}>
-              {line}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="logs-panel">
-        <div className="logs-header">Logs: Shortcuts</div>
-        <div className="logs-list">
-          {shortcutLogs.length === 0 && <div className="log-line">No logs yet.</div>}
-          {shortcutLogs.map((line, index) => (
-            <div className="log-line" key={`shortcuts-${index}-${line.slice(0, 12)}`}>
-              {line}
-            </div>
-          ))}
-        </div>
-      </div>
+      <LogPanel title="Logs: Sonar GG API" lines={sonarLogs} keyPrefix="sonar" />
+      <LogPanel title="Logs: HID Events" lines={hidLogs} keyPrefix="hid" />
+      <LogPanel title="Logs: DDC" lines={ddcLogs} keyPrefix="ddc" />
+      <LogPanel title="Logs: Base Station OLED" lines={oledServiceLogs} keyPrefix="oled-service" />
+      <LogPanel title="Logs: Notifications" lines={notificationLogs} keyPrefix="notifications" />
+      <LogPanel title="Logs: Automatic Preset Switcher" lines={presetLogs} keyPrefix="preset" />
+      <LogPanel title="Logs: Shortcuts" lines={shortcutLogs} keyPrefix="shortcuts" />
     </>
   );
 }

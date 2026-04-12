@@ -7,7 +7,7 @@ import {
   type OledServiceFramePayload,
   type ServiceStatusPayload,
 } from "@shared/ipc";
-import { mergeState } from "@shared/settings";
+import { DEFAULT_SETTINGS, mergeState } from "@shared/settings";
 import { useIpc } from "../hooks/useIpc";
 
 export type MixerData = MixerDataPayload;
@@ -37,7 +37,7 @@ export function useBridgeState() {
   const [settings, setSettingsState] = useState<UiSettings | null>(null);
   const [status, setStatus] = useState("ready");
   const [error, setError] = useState<string | null>(null);
-  const [theme, setTheme] = useState({ isDark: true, accent: "#6ab7ff" });
+  const [theme, setTheme] = useState({ isDark: window.matchMedia("(prefers-color-scheme: dark)").matches, accent: "#6ab7ff" });
   const [openApps, setOpenApps] = useState<RunningAppInfo[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
   const [mixerData, setMixerData] = useState<MixerData>({ outputs: [], selectedOutputId: "default", apps: [] });
@@ -211,16 +211,20 @@ export function useBridgeState() {
 
   /**
    * Applies runtime theme values to CSS variables and scale.
+   * Runs immediately on mount with system defaults, then re-runs when settings
+   * or the system theme changes. Persists the resolved dark/light flag to
+   * localStorage so main.tsx can apply the correct theme before first paint.
    */
   useEffect(() => {
-    if (!settings) return;
-    const isDark = settings.themeMode === "system" ? theme.isDark : settings.themeMode === "dark";
-    const accent = settings.accentColor.trim() ? settings.accentColor : theme.accent;
+    const effective = settings ?? DEFAULT_SETTINGS;
+    const isDark = effective.themeMode === "system" ? theme.isDark : effective.themeMode === "dark";
+    const accent = effective.accentColor.trim() ? effective.accentColor : theme.accent;
     document.documentElement.dataset.theme = isDark ? "dark" : "light";
     document.documentElement.style.setProperty("--system-accent-color", accent);
     document.documentElement.style.setProperty("--system-accent-medium", accent);
     document.documentElement.style.setProperty("--system-accent-dark1", accent);
-    document.documentElement.style.setProperty("--ui-scale", `${Math.max(80, Math.min(140, settings.textScale)) / 100}`);
+    document.documentElement.style.setProperty("--ui-scale", `${Math.max(80, Math.min(140, effective.textScale)) / 100}`);
+    localStorage.setItem("cc-theme-dark", isDark ? "1" : "0");
   }, [theme, settings]);
 
   /**
