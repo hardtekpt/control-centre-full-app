@@ -70,7 +70,40 @@
   grid-template-columns: 160px 1fr;
   align-items: center;
   gap: 10px;
-  margin: 8px 0;
+  margin: 6px 0;
+}
+
+.settings-section {
+  margin-bottom: 8px;
+  border-radius: 6px;
+  border: 1px solid var(--tray-border);
+  background: var(--page-section-bg);
+  padding: 8px 10px;
+
+  .form-row {
+    margin: 4px 0;
+
+    &:first-of-type {
+      margin-top: 0;
+    }
+
+    &:last-of-type {
+      margin-bottom: 0;
+    }
+  }
+
+  .visible-grid {
+    margin-top: 0;
+  }
+}
+
+.settings-section-title {
+  font-size: 0.74em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  opacity: 0.55;
+  margin-bottom: 6px;
 }
 
 .accent-row {
@@ -136,12 +169,15 @@
   margin-top: 4px;
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.2);
-  min-height: 140px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  flex: 1 1 auto;
   width: 100%;
+}
+
+.logs-panel--tall .logs-list {
+  max-height: 360px;
+  overflow-y: auto;
 }
 
 .logs-header {
