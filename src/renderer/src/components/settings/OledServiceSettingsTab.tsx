@@ -20,47 +20,48 @@ export default function OledServiceSettingsTab({ settings, oledServiceFrame, onU
 
   return (
     <>
-      <h3>Base Station OLED Service</h3>
-      <p className="hint">Configure the live OLED dashboard and custom-notification mirroring.</p>
+      <h3>Base Station OLED</h3>
 
-      <label className="form-row">
-        <span>Enable OLED service</span>
-        <input
-          type="checkbox"
-          checked={settings.services.oledDisplayEnabled === true}
-          onChange={(event) =>
-            onUpdate({
-              services: {
-                ...settings.services,
-                oledDisplayEnabled: event.currentTarget.checked,
-              },
-            })
-          }
-        />
-      </label>
-
-      <label className="form-row">
-        <span>Refresh interval (seconds)</span>
-        <div className="accent-row">
+      <div className="settings-section">
+        <div className="settings-section-title">Service</div>
+        <label className="form-row">
+          <span>Enable OLED service</span>
           <input
-            className="text-input"
-            type="number"
-            min={5}
-            max={300}
-            step={1}
-            value={Math.max(5, Math.round((oledSettings.refreshIntervalMs ?? 15_000) / 1000))}
+            type="checkbox"
+            checked={settings.services.oledDisplayEnabled === true}
             onChange={(event) =>
-              updateOled({
-                refreshIntervalMs: Math.max(5, Math.round(Number(event.currentTarget.value) || 15)) * 1000,
+              onUpdate({
+                services: {
+                  ...settings.services,
+                  oledDisplayEnabled: event.currentTarget.checked,
+                },
               })
             }
           />
-          <span>s</span>
-        </div>
-      </label>
+        </label>
+        <label className="form-row">
+          <span>Refresh interval</span>
+          <div className="accent-row">
+            <input
+              className="text-input"
+              type="number"
+              min={5}
+              max={300}
+              step={1}
+              value={Math.max(5, Math.round((oledSettings.refreshIntervalMs ?? 15_000) / 1000))}
+              onChange={(event) =>
+                updateOled({
+                  refreshIntervalMs: Math.max(5, Math.round(Number(event.currentTarget.value) || 15)) * 1000,
+                })
+              }
+            />
+            <span>s</span>
+          </div>
+        </label>
+      </div>
 
-      <div className="visible-channels">
-        <div className="logs-header">Dashboard Components</div>
+      <div className="settings-section">
+        <div className="settings-section-title">Dashboard Components</div>
         <div className="visible-grid">
           <label className="visible-item">
             <input
@@ -92,7 +93,7 @@ export default function OledServiceSettingsTab({ settings, oledServiceFrame, onU
               checked={oledSettings.showBatteryInfo !== false}
               onChange={(event) => updateOled({ showBatteryInfo: event.currentTarget.checked })}
             />
-            <span>Battery Information</span>
+            <span>Battery Info</span>
           </label>
           <label className="visible-item">
             <input
@@ -108,13 +109,13 @@ export default function OledServiceSettingsTab({ settings, oledServiceFrame, onU
               checked={oledSettings.showCustomNotifications === true}
               onChange={(event) => updateOled({ showCustomNotifications: event.currentTarget.checked })}
             />
-            <span>Show Custom Notifications</span>
+            <span>Custom Notifications</span>
           </label>
         </div>
       </div>
 
-      <div className="logs-panel">
-        <div className="logs-header">Last OLED Payload Snapshot</div>
+      <div className="settings-section">
+        <div className="settings-section-title">Last Payload</div>
         <div className="logs-list">
           {!oledServiceFrame && <div className="log-line">No payload yet. Enable the service to start dashboard updates.</div>}
           {oledServiceFrame && (

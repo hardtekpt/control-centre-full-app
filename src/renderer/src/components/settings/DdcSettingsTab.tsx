@@ -49,228 +49,235 @@ export default function DdcSettingsTab({
 }: DdcSettingsTabProps) {
   return (
     <>
-      <h3>DDC Monitor Data</h3>
-      <label className="form-row">
-        <span>DDC poll interval (minutes)</span>
-        <div className="accent-row">
-          <input
-            className="text-input"
-            type="number"
-            min={1}
-            max={30}
-            step={1}
-            value={Math.max(1, Math.round(settings.ddc.pollIntervalMs / 60000))}
+      <h3>DDC Monitor Settings</h3>
+
+      <div className="settings-section">
+        <div className="settings-section-title">Polling</div>
+        <label className="form-row">
+          <span>Poll interval</span>
+          <div className="accent-row">
+            <input
+              className="text-input"
+              type="number"
+              min={1}
+              max={30}
+              step={1}
+              value={Math.max(1, Math.round(settings.ddc.pollIntervalMs / 60000))}
+              onChange={(event) =>
+                onUpdate({
+                  ddc: {
+                    ...settings.ddc,
+                    pollIntervalMs: Math.max(1, Math.round(Number(event.currentTarget.value) || 5)) * 60_000,
+                  },
+                })
+              }
+            />
+            <span>min</span>
+          </div>
+        </label>
+        <label className="form-row">
+          <span>Refresh when stale</span>
+          <div className="accent-row">
+            <input
+              className="text-input"
+              type="number"
+              min={1}
+              max={60}
+              step={1}
+              value={Math.max(1, Math.round((settings.ddc.openStaleThresholdMs ?? 60_000) / 60_000))}
+              onChange={(event) =>
+                onUpdate({
+                  ddc: {
+                    ...settings.ddc,
+                    openStaleThresholdMs: Math.max(1, Math.round(Number(event.currentTarget.value) || 1)) * 60_000,
+                  },
+                })
+              }
+            />
+            <span>min</span>
+          </div>
+        </label>
+      </div>
+
+      <div className="settings-section">
+        <div className="settings-section-title">Primary Monitor</div>
+        <label className="form-row">
+          <span>Monitor</span>
+          <select
+            value={dashboardMonitorId ?? ""}
             onChange={(event) =>
               onUpdate({
                 ddc: {
                   ...settings.ddc,
-                  pollIntervalMs: Math.max(1, Math.round(Number(event.currentTarget.value) || 5)) * 60_000,
+                  dashboardMonitorId: Number(event.currentTarget.value) || null,
                 },
               })
             }
-          />
-          <span>min</span>
-        </div>
-      </label>
-
-      <label className="form-row">
-        <span>Refresh monitors when stale (minutes)</span>
-        <div className="accent-row">
+          >
+            <option value="">Auto (first)</option>
+            {ddcMonitors.map((item) => (
+              <option key={item.monitor_id} value={item.monitor_id}>
+                {monitorDisplayName(item)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="form-row">
+          <span>Display name</span>
           <input
             className="text-input"
-            type="number"
-            min={1}
-            max={60}
-            step={1}
-            value={Math.max(1, Math.round((settings.ddc.openStaleThresholdMs ?? 60_000) / 60_000))}
+            value={monitorAliasValue(selectedPrimaryMonitor?.monitor_id ?? null)}
+            onChange={(event) => setMonitorAlias(selectedPrimaryMonitor?.monitor_id ?? null, event.currentTarget.value)}
+            placeholder={selectedPrimaryMonitor?.name ?? "Primary monitor"}
+          />
+        </label>
+        <label className="form-row">
+          <span>Input toggle A</span>
+          <select
+            value={settings.ddc.dashboardPrimaryInputA}
             onChange={(event) =>
               onUpdate({
                 ddc: {
                   ...settings.ddc,
-                  openStaleThresholdMs: Math.max(1, Math.round(Number(event.currentTarget.value) || 1)) * 60_000,
+                  dashboardPrimaryInputA: event.currentTarget.value,
                 },
               })
             }
+          >
+            <option value="">Auto (first)</option>
+            {primaryInputOptions.map((input) => (
+              <option key={`ddc-a-${input}`} value={input}>
+                {inputLabel(input)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="form-row">
+          <span>Input toggle B</span>
+          <select
+            value={settings.ddc.dashboardPrimaryInputB}
+            onChange={(event) =>
+              onUpdate({
+                ddc: {
+                  ...settings.ddc,
+                  dashboardPrimaryInputB: event.currentTarget.value,
+                },
+              })
+            }
+          >
+            <option value="">Auto (second)</option>
+            {primaryInputOptions.map((input) => (
+              <option key={`ddc-b-${input}`} value={input}>
+                {inputLabel(input)}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="settings-section">
+        <div className="settings-section-title">Secondary Monitor</div>
+        <label className="form-row">
+          <span>Monitor</span>
+          <select
+            value={dashboardSecondaryMonitorId ?? ""}
+            onChange={(event) =>
+              onUpdate({
+                ddc: {
+                  ...settings.ddc,
+                  dashboardSecondaryMonitorId: Number(event.currentTarget.value) || null,
+                },
+              })
+            }
+          >
+            <option value="">Auto (second)</option>
+            {ddcMonitors.map((item) => (
+              <option key={`secondary-${item.monitor_id}`} value={item.monitor_id}>
+                {monitorDisplayName(item)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="form-row">
+          <span>Display name</span>
+          <input
+            className="text-input"
+            value={monitorAliasValue(selectedSecondaryMonitor?.monitor_id ?? null)}
+            onChange={(event) => setMonitorAlias(selectedSecondaryMonitor?.monitor_id ?? null, event.currentTarget.value)}
+            placeholder={selectedSecondaryMonitor?.name ?? "Secondary monitor"}
           />
-          <span>min</span>
-        </div>
-      </label>
-
-      <label className="form-row">
-        <span>Dashboard monitor</span>
-        <select
-          value={dashboardMonitorId ?? ""}
-          onChange={(event) =>
-            onUpdate({
-              ddc: {
-                ...settings.ddc,
-                dashboardMonitorId: Number(event.currentTarget.value) || null,
-              },
-            })
-          }
-        >
-          <option value="">Auto (first monitor)</option>
-          {ddcMonitors.map((item) => (
-            <option key={item.monitor_id} value={item.monitor_id}>
-              {monitorDisplayName(item)}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="form-row">
-        <span>Primary monitor name</span>
-        <input
-          className="text-input"
-          value={monitorAliasValue(selectedPrimaryMonitor?.monitor_id ?? null)}
-          onChange={(event) => setMonitorAlias(selectedPrimaryMonitor?.monitor_id ?? null, event.currentTarget.value)}
-          placeholder={selectedPrimaryMonitor?.name ?? "Primary monitor"}
-        />
-      </label>
-
-      <label className="form-row">
-        <span>Dashboard monitor (secondary)</span>
-        <select
-          value={dashboardSecondaryMonitorId ?? ""}
-          onChange={(event) =>
-            onUpdate({
-              ddc: {
-                ...settings.ddc,
-                dashboardSecondaryMonitorId: Number(event.currentTarget.value) || null,
-              },
-            })
-          }
-        >
-          <option value="">Auto (second monitor)</option>
-          {ddcMonitors.map((item) => (
-            <option key={`secondary-${item.monitor_id}`} value={item.monitor_id}>
-              {monitorDisplayName(item)}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="form-row">
-        <span>Secondary monitor name</span>
-        <input
-          className="text-input"
-          value={monitorAliasValue(selectedSecondaryMonitor?.monitor_id ?? null)}
-          onChange={(event) => setMonitorAlias(selectedSecondaryMonitor?.monitor_id ?? null, event.currentTarget.value)}
-          placeholder={selectedSecondaryMonitor?.name ?? "Secondary monitor"}
-        />
-      </label>
-
-      <label className="form-row">
-        <span>Primary input toggle A</span>
-        <select
-          value={settings.ddc.dashboardPrimaryInputA}
-          onChange={(event) =>
-            onUpdate({
-              ddc: {
-                ...settings.ddc,
-                dashboardPrimaryInputA: event.currentTarget.value,
-              },
-            })
-          }
-        >
-          <option value="">Auto (first input)</option>
-          {primaryInputOptions.map((input) => (
-            <option key={`ddc-a-${input}`} value={input}>
-              {inputLabel(input)}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="form-row">
-        <span>Primary input toggle B</span>
-        <select
-          value={settings.ddc.dashboardPrimaryInputB}
-          onChange={(event) =>
-            onUpdate({
-              ddc: {
-                ...settings.ddc,
-                dashboardPrimaryInputB: event.currentTarget.value,
-              },
-            })
-          }
-        >
-          <option value="">Auto (second input)</option>
-          {primaryInputOptions.map((input) => (
-            <option key={`ddc-b-${input}`} value={input}>
-              {inputLabel(input)}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="form-row">
-        <span>Secondary input toggle A</span>
-        <select
-          value={settings.ddc.dashboardSecondaryInputA}
-          onChange={(event) =>
-            onUpdate({
-              ddc: {
-                ...settings.ddc,
-                dashboardSecondaryInputA: event.currentTarget.value,
-              },
-            })
-          }
-        >
-          <option value="">Auto (first input)</option>
-          {secondaryInputOptions.map((input) => (
-            <option key={`ddc-secondary-a-${input}`} value={input}>
-              {inputLabel(input)}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="form-row">
-        <span>Secondary input toggle B</span>
-        <select
-          value={settings.ddc.dashboardSecondaryInputB}
-          onChange={(event) =>
-            onUpdate({
-              ddc: {
-                ...settings.ddc,
-                dashboardSecondaryInputB: event.currentTarget.value,
-              },
-            })
-          }
-        >
-          <option value="">Auto (second input)</option>
-          {secondaryInputOptions.map((input) => (
-            <option key={`ddc-secondary-b-${input}`} value={input}>
-              {inputLabel(input)}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <div className="visible-channels">
-        <div className="visible-title">Input names by hex code</div>
-        <div className="visible-grid">
-          {knownInputCodes.map((inputCode) => (
-            <label key={`input-name-${inputCode}`} className="form-row">
-              <span>{inputCode}</span>
-              <input className="text-input" value={resolveInputName(inputCode)} onChange={(event) => setInputName(inputCode, event.currentTarget.value)} placeholder="Custom input name" />
-            </label>
-          ))}
-          {knownInputCodes.length === 0 && <div className="hint">No monitor input codes available yet.</div>}
-        </div>
+        </label>
+        <label className="form-row">
+          <span>Input toggle A</span>
+          <select
+            value={settings.ddc.dashboardSecondaryInputA}
+            onChange={(event) =>
+              onUpdate({
+                ddc: {
+                  ...settings.ddc,
+                  dashboardSecondaryInputA: event.currentTarget.value,
+                },
+              })
+            }
+          >
+            <option value="">Auto (first)</option>
+            {secondaryInputOptions.map((input) => (
+              <option key={`ddc-secondary-a-${input}`} value={input}>
+                {inputLabel(input)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="form-row">
+          <span>Input toggle B</span>
+          <select
+            value={settings.ddc.dashboardSecondaryInputB}
+            onChange={(event) =>
+              onUpdate({
+                ddc: {
+                  ...settings.ddc,
+                  dashboardSecondaryInputB: event.currentTarget.value,
+                },
+              })
+            }
+          >
+            <option value="">Auto (second)</option>
+            {secondaryInputOptions.map((input) => (
+              <option key={`ddc-secondary-b-${input}`} value={input}>
+                {inputLabel(input)}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
-      <div className="ddc-json-meta">
-        <span>Last updated:</span>
-        <span>{ddcMonitorsUpdatedAt ? new Date(ddcMonitorsUpdatedAt).toLocaleString() : "Never"}</span>
-        <button className="button" onClick={onRefreshDdcMonitors}>
-          Refresh
-        </button>
-      </div>
-      {ddcError && <p className="hint error-text">{ddcError}</p>}
-      <div className="ddc-json-wrap">
-        <pre className="ddc-json">{JSON.stringify(ddcMonitors, null, 2)}</pre>
+      {knownInputCodes.length > 0 && (
+        <div className="settings-section">
+          <div className="settings-section-title">Input Labels</div>
+          <div className="visible-grid">
+            {knownInputCodes.map((inputCode) => (
+              <label key={`input-name-${inputCode}`} className="form-row">
+                <span>{inputCode}</span>
+                <input className="text-input" value={resolveInputName(inputCode)} onChange={(event) => setInputName(inputCode, event.currentTarget.value)} placeholder="Custom name" />
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="settings-section">
+        <div className="settings-section-title">Monitor Data</div>
+        <div className="ddc-json-meta">
+          <span>Last updated:</span>
+          <span>{ddcMonitorsUpdatedAt ? new Date(ddcMonitorsUpdatedAt).toLocaleString() : "Never"}</span>
+          <button className="button" onClick={onRefreshDdcMonitors}>
+            Refresh
+          </button>
+        </div>
+        {ddcError && <p className="hint error-text">{ddcError}</p>}
+        <div className="ddc-json-wrap">
+          <pre className="ddc-json">{JSON.stringify(ddcMonitors, null, 2)}</pre>
+        </div>
       </div>
     </>
   );
