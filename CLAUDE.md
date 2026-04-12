@@ -159,3 +159,22 @@ The app state updates in the background. The renderer receives state via IPC eve
 - Vendored DDC module at `vendor/node-ddcci/` — not from npm, unpacked from ASAR at runtime
 - `scripts/` and `vendor/` are ASAR-unpacked so native `.node` binaries are accessible
 - Electron builder target: Windows NSIS installer (`com.control.centre`)
+
+---
+
+## Git Workflow
+
+### Commits
+- **After every code change, commit automatically** — do not wait to be asked.
+- Stage only the files that were modified as part of the task (never `.claude/` local config files).
+- Write a concise, descriptive commit message: imperative subject line + brief body explaining what changed and why.
+- Always append the co-author trailer:
+  ```
+  Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+  ```
+
+### Feature branches & merges
+- **For any feature, refactor, or non-trivial fix:** work on a dedicated branch (e.g. `feat/ddc-settings-refactor`, `fix/oled-interval-clamp`).
+- After all commits are done, merge the branch into `master` locally with `--no-ff` and a descriptive merge commit message.
+- The `gh` CLI is not available on this machine — provide the GitHub PR URL printed by `git push` so the user can open it manually if a remote PR is needed.
+- For small single-file fixes a branch is optional; commit directly to the current branch.
