@@ -53,9 +53,12 @@ export default function DdcSettingsTab({
 
       <div className="settings-section">
         <div className="settings-section-title">Polling</div>
-        <label className="form-row">
-          <span>Poll interval</span>
-          <div className="accent-row">
+        <div className="ddc-polling-inline">
+          <label
+            className="ddc-polling-field"
+            title="How often DDC queries the monitors for their current state"
+          >
+            <span>Poll interval</span>
             <input
               className="text-input"
               type="number"
@@ -73,11 +76,13 @@ export default function DdcSettingsTab({
               }
             />
             <span>min</span>
-          </div>
-        </label>
-        <label className="form-row">
-          <span>Refresh when stale</span>
-          <div className="accent-row">
+          </label>
+          <span className="ddc-polling-sep">·</span>
+          <label
+            className="ddc-polling-field"
+            title="If the settings window is opened and monitor data is older than this, a fresh poll is triggered automatically"
+          >
+            <span>Refresh when stale</span>
             <input
               className="text-input"
               type="number"
@@ -95,15 +100,18 @@ export default function DdcSettingsTab({
               }
             />
             <span>min</span>
-          </div>
-        </label>
+          </label>
+        </div>
       </div>
 
       <div className="settings-section">
         <div className="settings-section-title">Primary Monitor</div>
-        <label className="form-row">
-          <span>Monitor</span>
+        <div
+          className="ddc-monitor-row"
+          title="Select the primary monitor and optionally set a custom display name"
+        >
           <select
+            title="Physical monitor used as the primary dashboard monitor"
             value={dashboardMonitorId ?? ""}
             onChange={(event) =>
               onUpdate({
@@ -114,72 +122,69 @@ export default function DdcSettingsTab({
               })
             }
           >
-            <option value="">Auto (first)</option>
+            <option value="">Auto (first monitor)</option>
             {ddcMonitors.map((item) => (
               <option key={item.monitor_id} value={item.monitor_id}>
                 {monitorDisplayName(item)}
               </option>
             ))}
           </select>
-        </label>
-        <label className="form-row">
-          <span>Display name</span>
           <input
             className="text-input"
+            title="Custom label shown for this monitor in the dashboard"
             value={monitorAliasValue(selectedPrimaryMonitor?.monitor_id ?? null)}
             onChange={(event) => setMonitorAlias(selectedPrimaryMonitor?.monitor_id ?? null, event.currentTarget.value)}
-            placeholder={selectedPrimaryMonitor?.name ?? "Primary monitor"}
+            placeholder={selectedPrimaryMonitor?.name ?? "Display name…"}
           />
-        </label>
-        <label className="form-row">
-          <span>Input toggle A</span>
-          <select
-            value={settings.ddc.dashboardPrimaryInputA}
-            onChange={(event) =>
-              onUpdate({
-                ddc: {
-                  ...settings.ddc,
-                  dashboardPrimaryInputA: event.currentTarget.value,
-                },
-              })
-            }
-          >
-            <option value="">Auto (first)</option>
-            {primaryInputOptions.map((input) => (
-              <option key={`ddc-a-${input}`} value={input}>
-                {inputLabel(input)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="form-row">
-          <span>Input toggle B</span>
-          <select
-            value={settings.ddc.dashboardPrimaryInputB}
-            onChange={(event) =>
-              onUpdate({
-                ddc: {
-                  ...settings.ddc,
-                  dashboardPrimaryInputB: event.currentTarget.value,
-                },
-              })
-            }
-          >
-            <option value="">Auto (second)</option>
-            {primaryInputOptions.map((input) => (
-              <option key={`ddc-b-${input}`} value={input}>
-                {inputLabel(input)}
-              </option>
-            ))}
-          </select>
-        </label>
+        </div>
+        <div className="ddc-input-pair">
+          <label className="ddc-input-pair-item" title="First input source assigned to the primary monitor toggle button">
+            <span>A</span>
+            <select
+              value={settings.ddc.dashboardPrimaryInputA}
+              onChange={(event) =>
+                onUpdate({
+                  ddc: { ...settings.ddc, dashboardPrimaryInputA: event.currentTarget.value },
+                })
+              }
+            >
+              <option value="">Auto (first)</option>
+              {primaryInputOptions.map((input) => (
+                <option key={`ddc-a-${input}`} value={input}>
+                  {inputLabel(input)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="ddc-input-pair-item" title="Second input source assigned to the primary monitor toggle button">
+            <span>B</span>
+            <select
+              value={settings.ddc.dashboardPrimaryInputB}
+              onChange={(event) =>
+                onUpdate({
+                  ddc: { ...settings.ddc, dashboardPrimaryInputB: event.currentTarget.value },
+                })
+              }
+            >
+              <option value="">Auto (second)</option>
+              {primaryInputOptions.map((input) => (
+                <option key={`ddc-b-${input}`} value={input}>
+                  {inputLabel(input)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       <div className="settings-section">
         <div className="settings-section-title">Secondary Monitor</div>
-        <label className="form-row">
-          <span>Monitor</span>
+        <div
+          className="ddc-monitor-row"
+          title="Select the secondary monitor and optionally set a custom display name"
+        >
           <select
+            title="Physical monitor used as the secondary dashboard monitor"
             value={dashboardSecondaryMonitorId ?? ""}
             onChange={(event) =>
               onUpdate({
@@ -190,75 +195,78 @@ export default function DdcSettingsTab({
               })
             }
           >
-            <option value="">Auto (second)</option>
+            <option value="">Auto (second monitor)</option>
             {ddcMonitors.map((item) => (
               <option key={`secondary-${item.monitor_id}`} value={item.monitor_id}>
                 {monitorDisplayName(item)}
               </option>
             ))}
           </select>
-        </label>
-        <label className="form-row">
-          <span>Display name</span>
           <input
             className="text-input"
+            title="Custom label shown for this monitor in the dashboard"
             value={monitorAliasValue(selectedSecondaryMonitor?.monitor_id ?? null)}
             onChange={(event) => setMonitorAlias(selectedSecondaryMonitor?.monitor_id ?? null, event.currentTarget.value)}
-            placeholder={selectedSecondaryMonitor?.name ?? "Secondary monitor"}
+            placeholder={selectedSecondaryMonitor?.name ?? "Display name…"}
           />
-        </label>
-        <label className="form-row">
-          <span>Input toggle A</span>
-          <select
-            value={settings.ddc.dashboardSecondaryInputA}
-            onChange={(event) =>
-              onUpdate({
-                ddc: {
-                  ...settings.ddc,
-                  dashboardSecondaryInputA: event.currentTarget.value,
-                },
-              })
-            }
-          >
-            <option value="">Auto (first)</option>
-            {secondaryInputOptions.map((input) => (
-              <option key={`ddc-secondary-a-${input}`} value={input}>
-                {inputLabel(input)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="form-row">
-          <span>Input toggle B</span>
-          <select
-            value={settings.ddc.dashboardSecondaryInputB}
-            onChange={(event) =>
-              onUpdate({
-                ddc: {
-                  ...settings.ddc,
-                  dashboardSecondaryInputB: event.currentTarget.value,
-                },
-              })
-            }
-          >
-            <option value="">Auto (second)</option>
-            {secondaryInputOptions.map((input) => (
-              <option key={`ddc-secondary-b-${input}`} value={input}>
-                {inputLabel(input)}
-              </option>
-            ))}
-          </select>
-        </label>
+        </div>
+        <div className="ddc-input-pair">
+          <label className="ddc-input-pair-item" title="First input source assigned to the secondary monitor toggle button">
+            <span>A</span>
+            <select
+              value={settings.ddc.dashboardSecondaryInputA}
+              onChange={(event) =>
+                onUpdate({
+                  ddc: { ...settings.ddc, dashboardSecondaryInputA: event.currentTarget.value },
+                })
+              }
+            >
+              <option value="">Auto (first)</option>
+              {secondaryInputOptions.map((input) => (
+                <option key={`ddc-secondary-a-${input}`} value={input}>
+                  {inputLabel(input)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="ddc-input-pair-item" title="Second input source assigned to the secondary monitor toggle button">
+            <span>B</span>
+            <select
+              value={settings.ddc.dashboardSecondaryInputB}
+              onChange={(event) =>
+                onUpdate({
+                  ddc: { ...settings.ddc, dashboardSecondaryInputB: event.currentTarget.value },
+                })
+              }
+            >
+              <option value="">Auto (second)</option>
+              {secondaryInputOptions.map((input) => (
+                <option key={`ddc-secondary-b-${input}`} value={input}>
+                  {inputLabel(input)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       {knownInputCodes.length > 0 && (
         <div className="settings-section">
           <div className="settings-section-title">Input Labels</div>
-          <div className="visible-grid">
+          <div className="ddc-input-labels">
             {knownInputCodes.map((inputCode) => (
-              <label key={`input-name-${inputCode}`} className="form-row">
+              <label
+                key={`input-name-${inputCode}`}
+                className="ddc-input-label-item"
+                title={`Custom display name for input source ${inputCode}`}
+              >
                 <span>{inputCode}</span>
-                <input className="text-input" value={resolveInputName(inputCode)} onChange={(event) => setInputName(inputCode, event.currentTarget.value)} placeholder="Custom name" />
+                <input
+                  className="text-input"
+                  value={resolveInputName(inputCode)}
+                  onChange={(event) => setInputName(inputCode, event.currentTarget.value)}
+                  placeholder="Name…"
+                />
               </label>
             ))}
           </div>
@@ -270,7 +278,7 @@ export default function DdcSettingsTab({
         <div className="ddc-json-meta">
           <span>Last updated:</span>
           <span>{ddcMonitorsUpdatedAt ? new Date(ddcMonitorsUpdatedAt).toLocaleString() : "Never"}</span>
-          <button className="button" onClick={onRefreshDdcMonitors}>
+          <button className="button" onClick={onRefreshDdcMonitors} title="Force an immediate DDC poll of all connected monitors">
             Refresh
           </button>
         </div>
