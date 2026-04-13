@@ -14,6 +14,28 @@ export default function GgSonarSettingsTab({ settings, onUpdate, onToggleChannel
     <>
       <h3>GG Sonar Settings</h3>
       <label className="form-row">
+        <span>Poll interval</span>
+        <div className="accent-row">
+          <input
+            className="text-input"
+            type="number"
+            min={1}
+            max={60}
+            step={1}
+            value={Math.max(1, Math.round((settings.services.sonarPollIntervalMs ?? 2000) / 1000))}
+            onChange={(event) =>
+              onUpdate({
+                services: {
+                  ...settings.services,
+                  sonarPollIntervalMs: Math.max(1, Math.round(Number(event.currentTarget.value) || 2)) * 1000,
+                },
+              })
+            }
+          />
+          <span>s</span>
+        </div>
+      </label>
+      <label className="form-row">
         <span>PC USB input</span>
         <select value={settings.pcUsbInput} onChange={(event) => onUpdate({ pcUsbInput: event.currentTarget.value === "2" ? 2 : 1 })}>
           <option value="1">USB Input 1</option>
