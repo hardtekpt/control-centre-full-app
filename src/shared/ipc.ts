@@ -16,6 +16,8 @@ export const IPC_INVOKE = {
   DDC_SET_INPUT_SOURCE: "ddc:set-input-source",
   WINDOW_SET_PINNED: "window:set-pinned",
   SETTINGS_SET: "settings:set",
+  SETTINGS_EXPORT: "settings:export",
+  SETTINGS_IMPORT: "settings:import",
 } as const;
 
 export const IPC_SEND = {
@@ -130,6 +132,20 @@ export interface OledServiceFramePayload {
   generatedAtIso: string;
 }
 
+export interface ExportSettingsResponse {
+  ok: boolean;
+  path?: string;
+  cancelled?: boolean;
+  error?: string;
+}
+
+export interface ImportSettingsResponse {
+  ok: boolean;
+  settings?: UiSettings;
+  cancelled?: boolean;
+  error?: string;
+}
+
 export interface BooleanOkResponse {
   ok: boolean;
 }
@@ -176,6 +192,8 @@ export interface IpcInvokeMap {
   [IPC_INVOKE.DDC_SET_INPUT_SOURCE]: { params: [{ monitorId: number; value: string }]; result: DdcMutateMonitorResponse };
   [IPC_INVOKE.WINDOW_SET_PINNED]: { params: [pinned: boolean]; result: FlyoutPinnedResponse };
   [IPC_INVOKE.SETTINGS_SET]: { params: [settings: Partial<UiSettings>]; result: UiSettings };
+  [IPC_INVOKE.SETTINGS_EXPORT]: { params: []; result: ExportSettingsResponse };
+  [IPC_INVOKE.SETTINGS_IMPORT]: { params: []; result: ImportSettingsResponse };
 }
 
 export type InvokeChannel = keyof IpcInvokeMap;
@@ -221,6 +239,8 @@ export interface ArctisBridgeApi {
   setFlyoutPinned(pinned: boolean): Promise<FlyoutPinnedResponse>;
   reportFlyoutContentSize(width: number, height: number): void;
   setSettings(settings: Partial<UiSettings>): Promise<UiSettings>;
+  exportSettings(): Promise<ExportSettingsResponse>;
+  importSettings(): Promise<ImportSettingsResponse>;
   onState(cb: (state: AppState) => void): () => void;
   onPresets(cb: (presets: PresetMap) => void): () => void;
   onStatus(cb: (text: string) => void): () => void;

@@ -4,7 +4,9 @@ import type {
   BooleanOkResponse,
   DdcGetMonitorsResponse,
   DdcMutateMonitorResponse,
+  ExportSettingsResponse,
   FlyoutPinnedResponse,
+  ImportSettingsResponse,
   InitialPayload,
   MixerDataPayload,
   OpenGgResponse,
@@ -34,6 +36,8 @@ export interface RegisterCoreIpcHandlersDeps {
   getDdcMonitors: () => Promise<DdcGetMonitorsResponse>;
   setDdcBrightness: (payload: { monitorId: number; value: number }) => Promise<DdcMutateMonitorResponse>;
   setDdcInputSource: (payload: { monitorId: number; value: string }) => Promise<DdcMutateMonitorResponse>;
+  exportSettings: () => Promise<ExportSettingsResponse>;
+  importSettings: () => Promise<ImportSettingsResponse>;
 }
 
 /**
@@ -63,6 +67,8 @@ export function registerCoreIpcHandlers(deps: RegisterCoreIpcHandlersDeps): void
     getDdcMonitors,
     setDdcBrightness,
     setDdcInputSource,
+    exportSettings,
+    importSettings,
   } = deps;
 
   ipcMain.handle(IPC_INVOKE.APP_GET_INITIAL, getInitialPayload);
@@ -89,4 +95,7 @@ export function registerCoreIpcHandlers(deps: RegisterCoreIpcHandlersDeps): void
   ipcMain.handle(IPC_INVOKE.DDC_GET_MONITORS, getDdcMonitors);
   ipcMain.handle(IPC_INVOKE.DDC_SET_BRIGHTNESS, (_event, payload: { monitorId: number; value: number }) => setDdcBrightness(payload));
   ipcMain.handle(IPC_INVOKE.DDC_SET_INPUT_SOURCE, (_event, payload: { monitorId: number; value: string }) => setDdcInputSource(payload));
+
+  ipcMain.handle(IPC_INVOKE.SETTINGS_EXPORT, exportSettings);
+  ipcMain.handle(IPC_INVOKE.SETTINGS_IMPORT, importSettings);
 }
