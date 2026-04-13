@@ -7,6 +7,24 @@ interface AboutSettingsTabProps {
   logs: string[];
 }
 
+interface ServiceRowProps {
+  name: string;
+  state: string;
+  detail: string;
+  meta?: string;
+}
+
+function ServiceRow({ name, state, detail, meta }: ServiceRowProps) {
+  return (
+    <div className="service-row">
+      <span className="service-row-name">{name}</span>
+      <span className={`service-state ${state}`}>{state}</span>
+      <span className="service-row-detail">{detail}</span>
+      {meta && <span className="service-row-meta">{meta}</span>}
+    </div>
+  );
+}
+
 /**
  * Basic app info, service diagnostics, and runtime logs.
  */
@@ -16,58 +34,48 @@ export default function AboutSettingsTab({ lastStatus, lastError, serviceStatus,
       <h3>About</h3>
 
       <div className="settings-section">
-        <div className="settings-section-title">Control Centre</div>
-        <div className="service-detail">Electron + React flyout dashboard for Arctis Nova + Sonar control.</div>
-        <div className="service-detail" style={{ marginTop: 4 }}>
-          Backend: {lastError ? <span style={{ color: "#ff9b9b" }}>Error — {lastError}</span> : lastStatus}
+        <div className="settings-section-title">Services</div>
+        <div className="service-list">
+          <ServiceRow
+            name="Sonar GG API"
+            state={serviceStatus.sonarApi.state}
+            detail={serviceStatus.sonarApi.detail}
+            meta={`${serviceStatus.sonarApi.endpoint ?? "n/a"} · ${Math.round(serviceStatus.sonarApi.pollIntervalMs / 100) / 10}s`}
+          />
+          <ServiceRow
+            name="HID Events"
+            state={serviceStatus.hidEvents.state}
+            detail={serviceStatus.hidEvents.detail}
+          />
+          <ServiceRow
+            name="DDC API"
+            state={serviceStatus.ddcApi.state}
+            detail={serviceStatus.ddcApi.detail}
+            meta={`${serviceStatus.ddcApi.endpoint ?? "n/a"} · PID ${serviceStatus.ddcApi.pid ?? "n/a"}`}
+          />
+          <ServiceRow
+            name="Base Station OLED"
+            state={serviceStatus.baseStationOled.state}
+            detail={serviceStatus.baseStationOled.detail}
+          />
+          <ServiceRow
+            name="Notifications"
+            state={serviceStatus.notifications.state}
+            detail={serviceStatus.notifications.detail}
+          />
+          <ServiceRow
+            name="Preset Switcher"
+            state={serviceStatus.automaticPresetSwitcher.state}
+            detail={serviceStatus.automaticPresetSwitcher.detail}
+          />
+          <ServiceRow
+            name="Shortcuts"
+            state={serviceStatus.shortcuts.state}
+            detail={serviceStatus.shortcuts.detail}
+          />
         </div>
-      </div>
-
-      <div className="service-status-grid">
-        <div className="service-status-card">
-          <div className="service-title">Sonar GG API</div>
-          <div className={`service-state ${serviceStatus.sonarApi.state}`}>{serviceStatus.sonarApi.state}</div>
-          <div className="service-detail">{serviceStatus.sonarApi.detail}</div>
-          <div className="service-detail">Endpoint: {serviceStatus.sonarApi.endpoint ?? "n/a"}</div>
-          <div className="service-detail">Poll: {Math.round(serviceStatus.sonarApi.pollIntervalMs / 100) / 10}s</div>
-        </div>
-
-        <div className="service-status-card">
-          <div className="service-title">HID Events</div>
-          <div className={`service-state ${serviceStatus.hidEvents.state}`}>{serviceStatus.hidEvents.state}</div>
-          <div className="service-detail">{serviceStatus.hidEvents.detail}</div>
-        </div>
-
-        <div className="service-status-card">
-          <div className="service-title">DDC API</div>
-          <div className={`service-state ${serviceStatus.ddcApi.state}`}>{serviceStatus.ddcApi.state}</div>
-          <div className="service-detail">{serviceStatus.ddcApi.detail}</div>
-          <div className="service-detail">Endpoint: {serviceStatus.ddcApi.endpoint}</div>
-          <div className="service-detail">Managed: {serviceStatus.ddcApi.managed ? "yes" : "no"} &nbsp;·&nbsp; PID: {serviceStatus.ddcApi.pid ?? "n/a"}</div>
-        </div>
-
-        <div className="service-status-card">
-          <div className="service-title">Base Station OLED</div>
-          <div className={`service-state ${serviceStatus.baseStationOled.state}`}>{serviceStatus.baseStationOled.state}</div>
-          <div className="service-detail">{serviceStatus.baseStationOled.detail}</div>
-        </div>
-
-        <div className="service-status-card">
-          <div className="service-title">Notifications</div>
-          <div className={`service-state ${serviceStatus.notifications.state}`}>{serviceStatus.notifications.state}</div>
-          <div className="service-detail">{serviceStatus.notifications.detail}</div>
-        </div>
-
-        <div className="service-status-card">
-          <div className="service-title">Preset Switcher</div>
-          <div className={`service-state ${serviceStatus.automaticPresetSwitcher.state}`}>{serviceStatus.automaticPresetSwitcher.state}</div>
-          <div className="service-detail">{serviceStatus.automaticPresetSwitcher.detail}</div>
-        </div>
-
-        <div className="service-status-card">
-          <div className="service-title">Shortcuts</div>
-          <div className={`service-state ${serviceStatus.shortcuts.state}`}>{serviceStatus.shortcuts.state}</div>
-          <div className="service-detail">{serviceStatus.shortcuts.detail}</div>
+        <div className="service-row-backend">
+          Backend: {lastError ? <span className="error-text">Error — {lastError}</span> : lastStatus}
         </div>
       </div>
 
