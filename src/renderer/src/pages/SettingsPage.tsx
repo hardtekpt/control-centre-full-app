@@ -613,9 +613,12 @@ export default function SettingsPage({
           />
         )}
 
-        {tab === "about" && <AboutSettingsTab lastStatus={lastStatus} lastError={lastError} serviceStatus={serviceStatus} logs={logs} />}
-
-        <p className="hint">Settings are saved in %APPDATA% userData JSON.</p>
+        {tab === "about" && (
+          <>
+            <AboutSettingsTab lastStatus={lastStatus} lastError={lastError} serviceStatus={serviceStatus} logs={logs} />
+            <p className="hint">Settings are saved in %APPDATA% userData JSON.</p>
+          </>
+        )}
       </div>
     </section>
   );
