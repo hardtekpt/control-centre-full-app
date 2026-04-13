@@ -26,9 +26,6 @@ interface SettingsProps {
   initialTab?: SettingsTab;
   onUpdate: (partial: Partial<UiSettings>) => void;
   onRefreshDdcMonitors: () => void;
-  onTestNotification: () => void;
-  onTestLowBatteryNotification: () => void;
-  onTestBatterySwapNotification: () => void;
   openApps: RunningAppInfo[];
 }
 
@@ -134,9 +131,6 @@ export default function SettingsPage({
   initialTab = "app",
   onUpdate,
   onRefreshDdcMonitors,
-  onTestNotification,
-  onTestLowBatteryNotification,
-  onTestBatterySwapNotification,
   openApps,
 }: SettingsProps) {
   const [tab, setTab] = useState<SettingsTab>(initialTab);
@@ -553,9 +547,6 @@ export default function SettingsPage({
             settings={settings}
             onUpdate={onUpdate}
             onToggleNotification={toggleNotification}
-            onTestNotification={onTestNotification}
-            onTestLowBatteryNotification={onTestLowBatteryNotification}
-            onTestBatterySwapNotification={onTestBatterySwapNotification}
           />
         )}
 

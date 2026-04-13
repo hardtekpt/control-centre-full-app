@@ -8,9 +8,7 @@ export type NotificationTimerKey =
   | "ancMode"
   | "connectivity"
   | "batteryLow"
-  | "baseBatteryStatus"
-  | "headsetBatterySwap"
-  | "headsetBatterySwapDelay";
+  | "baseBatteryStatus";
 
 export interface NotificationTimerService {
   clear: (key: NotificationTimerKey) => void;

@@ -27,8 +27,6 @@ export interface RegisterCoreIpcHandlersDeps {
   setSettings: (partial: Partial<UiSettings>) => UiSettings;
   openGg: () => Promise<OpenGgResponse>;
   notifyCustom: (payload: { title?: string; body?: string }) => Promise<BooleanOkResponse>;
-  notifyBatteryLowTest: () => Promise<BooleanOkResponse>;
-  notifyBatterySwapTest: () => Promise<BooleanOkResponse>;
   getMixerData: () => Promise<MixerDataPayload>;
   setMixerOutput: (outputId: string) => BooleanOkResponse;
   setMixerAppVolume: (payload: { appId: string; volume: number }) => BooleanOkResponse;
@@ -58,8 +56,6 @@ export function registerCoreIpcHandlers(deps: RegisterCoreIpcHandlersDeps): void
     setSettings,
     openGg,
     notifyCustom,
-    notifyBatteryLowTest,
-    notifyBatterySwapTest,
     getMixerData,
     setMixerOutput,
     setMixerAppVolume,
@@ -84,8 +80,6 @@ export function registerCoreIpcHandlers(deps: RegisterCoreIpcHandlersDeps): void
   ipcMain.handle(IPC_INVOKE.SETTINGS_SET, (_event, partial: Partial<UiSettings>) => setSettings(partial));
   ipcMain.handle(IPC_INVOKE.APP_OPEN_GG, openGg);
   ipcMain.handle(IPC_INVOKE.APP_NOTIFY_CUSTOM, (_event, payload: { title?: string; body?: string }) => notifyCustom(payload));
-  ipcMain.handle(IPC_INVOKE.APP_NOTIFY_BATTERY_LOW_TEST, notifyBatteryLowTest);
-  ipcMain.handle(IPC_INVOKE.APP_NOTIFY_BATTERY_SWAP_TEST, notifyBatterySwapTest);
 
   ipcMain.handle(IPC_INVOKE.MIXER_GET_DATA, getMixerData);
   ipcMain.handle(IPC_INVOKE.MIXER_SET_OUTPUT, (_event, outputId: string) => setMixerOutput(outputId));
