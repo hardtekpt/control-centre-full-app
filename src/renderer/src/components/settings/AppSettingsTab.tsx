@@ -145,6 +145,12 @@ export default function AppSettingsTab({
               const enabled = isEnabled(settingKey);
               return (
                 <div key={settingKey} className="service-ctrl-row">
+                  <input
+                    type="checkbox"
+                    checked={enabled}
+                    title={enabled ? "Disable service (persists across restarts)" : "Enable service (persists across restarts)"}
+                    onChange={(event) => setServiceEnabled(settingKey, event.currentTarget.checked)}
+                  />
                   <span className="service-ctrl-name">{label}</span>
                   <span className={`service-state ${state}`}>{state}</span>
                   <button
