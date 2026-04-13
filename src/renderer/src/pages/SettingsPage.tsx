@@ -533,6 +533,7 @@ export default function SettingsPage({
           <AppSettingsTab
             settings={settings}
             shortcutDraft={shortcutDraft}
+            serviceStatus={serviceStatus}
             onShortcutDraftChange={setShortcutDraft}
             onShortcutDraftCommit={() => onUpdate({ toggleShortcut: shortcutDraft })}
             onUpdate={onUpdate}
