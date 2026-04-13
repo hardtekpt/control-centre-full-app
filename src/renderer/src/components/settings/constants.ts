@@ -1,18 +1,51 @@
 import type { NotificationKey, ShortcutAction } from "@shared/types";
 
-export const NOTIFICATION_LABELS: Array<{ key: NotificationKey; label: string }> = [
-  { key: "appInfo", label: "Main App Info (Startup/Errors)" },
-  { key: "connectivity", label: "Connectivity OSD Indicator" },
-  { key: "usbInput", label: "USB Input Selected OSD" },
-  { key: "ancMode", label: "ANC OSD Indicator" },
-  { key: "oled", label: "OLED Brightness OSD" },
-  { key: "sidetone", label: "Sidetone OSD" },
-  { key: "micMute", label: "MIC Mute OSD Indicator" },
-  { key: "headsetChatMix", label: "Include Chat Mix In Headset OSD" },
-  { key: "headsetVolume", label: "Headset Volume + Chat Mix OSD" },
-  { key: "battery", label: "Battery OSD Alerts (Low + Base Station Insert/Remove)" },
-  { key: "presetChange", label: "Sonar Preset Change" },
+export interface NotificationCategory {
+  title: string;
+  items: Array<{ key: NotificationKey; label: string }>;
+}
+
+export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
+  {
+    title: "Headset",
+    items: [
+      { key: "headsetVolume", label: "Volume + Chat Mix OSD" },
+      { key: "headsetChatMix", label: "Include Chat Mix in Headset OSD" },
+      { key: "micMute", label: "MIC Mute OSD Indicator" },
+      { key: "ancMode", label: "ANC OSD Indicator" },
+      { key: "sidetone", label: "Sidetone OSD" },
+    ],
+  },
+  {
+    title: "Battery",
+    items: [
+      { key: "battery", label: "Battery Alerts (Low + Base Station Insert/Remove)" },
+    ],
+  },
+  {
+    title: "Connectivity",
+    items: [
+      { key: "connectivity", label: "Connectivity OSD Indicator" },
+      { key: "usbInput", label: "USB Input Selected OSD" },
+    ],
+  },
+  {
+    title: "App / Sonar",
+    items: [
+      { key: "presetChange", label: "Preset Change" },
+      { key: "appInfo", label: "App Info (Startup / Errors)" },
+    ],
+  },
+  {
+    title: "Display",
+    items: [
+      { key: "oled", label: "OLED Brightness OSD" },
+    ],
+  },
 ];
+
+export const NOTIFICATION_LABELS: Array<{ key: NotificationKey; label: string }> =
+  NOTIFICATION_CATEGORIES.flatMap((category) => category.items);
 
 export const SHORTCUT_ACTION_OPTIONS: Array<{ value: ShortcutAction; label: string }> = [
   { value: "sonar_volume_up", label: "Sonar Volume Up" },

@@ -12,7 +12,6 @@ interface NotificationWindows {
   connectivity: BrowserWindow | null;
   batteryLow: BrowserWindow | null;
   baseBatteryStatus: BrowserWindow | null;
-  headsetBatterySwap: BrowserWindow | null;
 }
 
 export interface CreateSettingsIpcHandlerDeps {
@@ -25,8 +24,6 @@ export interface CreateSettingsIpcHandlerDeps {
   getNotificationWindows: () => NotificationWindows;
   closeWindowIfOpen: (windowRef: BrowserWindow | null) => void;
   syncHeadsetVolumeNotification: (next: UiSettings, cachedState: AppState) => void;
-  clearHeadsetBatterySwapDelayTimer: () => void;
-  resetBatterySwapTrack: () => void;
   getCachedState: () => AppState;
   setCachedState: (state: AppState) => void;
   applyUsbInputInference: (state: AppState) => AppState;
@@ -49,8 +46,6 @@ export function createSettingsIpcHandler(deps: CreateSettingsIpcHandlerDeps): (p
     getNotificationWindows,
     closeWindowIfOpen,
     syncHeadsetVolumeNotification,
-    clearHeadsetBatterySwapDelayTimer,
-    resetBatterySwapTrack,
     getCachedState,
     setCachedState,
     applyUsbInputInference,
@@ -128,9 +123,6 @@ export function createSettingsIpcHandler(deps: CreateSettingsIpcHandlerDeps): (p
     if (next.notifications.battery === false) {
       closeWindowIfOpen(windows.batteryLow);
       closeWindowIfOpen(windows.baseBatteryStatus);
-      closeWindowIfOpen(windows.headsetBatterySwap);
-      clearHeadsetBatterySwapDelayTimer();
-      resetBatterySwapTrack();
     }
 
     const currentState = getCachedState();

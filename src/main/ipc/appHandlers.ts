@@ -6,15 +6,6 @@ const GG_EXECUTABLE_PATHS = [
   "C:\\Program Files (x86)\\SteelSeries\\GG\\SteelSeriesGG.exe",
 ] as const;
 
-interface BatteryLowNotificationPayload {
-  battery: number | null;
-  threshold: number;
-}
-
-interface HeadsetBatterySwapNotificationPayload {
-  headsetBattery: number | null;
-}
-
 export interface CreateAppIpcHandlersDeps {
   toNullablePercent: (value: number) => number | null;
   isHeadsetVolumeNotificationEnabled: () => boolean;
@@ -25,18 +16,12 @@ export interface CreateAppIpcHandlersDeps {
   normalizeError: (error: unknown) => string;
   showSystemNotification: (title: string, body: string) => void;
   showCustomNotificationOnOled: (title: string, body: string) => void;
-  getBatteryLowTestPayload: () => BatteryLowNotificationPayload;
-  showBatteryLowNotification: (payload: BatteryLowNotificationPayload) => Promise<void>;
-  getBatterySwapTestPayload: () => HeadsetBatterySwapNotificationPayload;
-  showHeadsetBatterySwapNotification: (payload: HeadsetBatterySwapNotificationPayload) => Promise<void>;
 }
 
 export interface AppIpcHandlers {
   previewHeadsetVolume: (payload: unknown) => void;
   openGg: () => Promise<OpenGgResponse>;
   notifyCustom: (payload: { title?: string; body?: string }) => Promise<BooleanOkResponse>;
-  notifyBatteryLowTest: () => Promise<BooleanOkResponse>;
-  notifyBatterySwapTest: () => Promise<BooleanOkResponse>;
 }
 
 /**
@@ -53,10 +38,6 @@ export function createAppIpcHandlers(deps: CreateAppIpcHandlersDeps): AppIpcHand
     normalizeError,
     showSystemNotification,
     showCustomNotificationOnOled,
-    getBatteryLowTestPayload,
-    showBatteryLowNotification,
-    getBatterySwapTestPayload,
-    showHeadsetBatterySwapNotification,
   } = deps;
 
   /**
@@ -93,14 +74,6 @@ export function createAppIpcHandlers(deps: CreateAppIpcHandlersDeps): AppIpcHand
       const body = String(payload?.body ?? "").trim() || "Notification";
       showSystemNotification(title, body);
       showCustomNotificationOnOled(title, body);
-      return { ok: true };
-    },
-    notifyBatteryLowTest: async () => {
-      await showBatteryLowNotification(getBatteryLowTestPayload());
-      return { ok: true };
-    },
-    notifyBatterySwapTest: async () => {
-      await showHeadsetBatterySwapNotification(getBatterySwapTestPayload());
       return { ok: true };
     },
   };

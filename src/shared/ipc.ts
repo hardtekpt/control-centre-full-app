@@ -5,8 +5,6 @@ export const IPC_INVOKE = {
   SERVICES_GET_STATUS: "services:get-status",
   APP_OPEN_GG: "app:open-gg",
   APP_NOTIFY_CUSTOM: "app:notify-custom",
-  APP_NOTIFY_BATTERY_LOW_TEST: "app:notify-battery-low-test",
-  APP_NOTIFY_BATTERY_SWAP_TEST: "app:notify-battery-swap-test",
   MIXER_GET_DATA: "mixer:get-data",
   MIXER_SET_OUTPUT: "mixer:set-output",
   MIXER_SET_APP_VOLUME: "mixer:set-app-volume",
@@ -181,8 +179,6 @@ export interface IpcInvokeMap {
   [IPC_INVOKE.SERVICES_GET_STATUS]: { params: []; result: ServiceStatusPayload };
   [IPC_INVOKE.APP_OPEN_GG]: { params: []; result: OpenGgResponse };
   [IPC_INVOKE.APP_NOTIFY_CUSTOM]: { params: [{ title: string; body: string }]; result: BooleanOkResponse };
-  [IPC_INVOKE.APP_NOTIFY_BATTERY_LOW_TEST]: { params: []; result: BooleanOkResponse };
-  [IPC_INVOKE.APP_NOTIFY_BATTERY_SWAP_TEST]: { params: []; result: BooleanOkResponse };
   [IPC_INVOKE.MIXER_GET_DATA]: { params: []; result: MixerDataPayload };
   [IPC_INVOKE.MIXER_SET_OUTPUT]: { params: [outputId: string]; result: BooleanOkResponse };
   [IPC_INVOKE.MIXER_SET_APP_VOLUME]: { params: [{ appId: string; volume: number }]; result: BooleanOkResponse };
@@ -223,8 +219,6 @@ export interface ArctisBridgeApi {
   getServiceStatus(): Promise<ServiceStatusPayload>;
   openGG(): Promise<OpenGgResponse>;
   notifyCustom(title: string, body: string): Promise<BooleanOkResponse>;
-  notifyBatteryLowTest(): Promise<BooleanOkResponse>;
-  notifyBatterySwapTest(): Promise<BooleanOkResponse>;
   notifyHeadsetVolumePreview(value: number): void;
   getMixerData(): Promise<MixerDataPayload>;
   setMixerOutput(outputId: string): Promise<BooleanOkResponse>;

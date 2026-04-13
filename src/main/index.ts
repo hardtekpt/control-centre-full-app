@@ -65,8 +65,6 @@ let batteryLowNotificationWindow: BrowserWindow | null = null;
 let batteryLowPendingValue: BatteryLowNotificationPayload | null = null;
 let baseBatteryStatusNotificationWindow: BrowserWindow | null = null;
 let baseBatteryStatusPendingValue: BaseBatteryStatusNotificationPayload | null = null;
-let headsetBatterySwapNotificationWindow: BrowserWindow | null = null;
-let headsetBatterySwapPendingValue: HeadsetBatterySwapNotificationPayload | null = null;
 type AncNotificationMode = "off" | "anc" | "transparency";
 interface ConnectivityNotificationPayload {
   connected: boolean;
@@ -82,9 +80,6 @@ interface BaseBatteryStatusNotificationPayload {
   inserted: boolean;
   battery: number | null;
 }
-interface HeadsetBatterySwapNotificationPayload {
-  headsetBattery: number | null;
-}
 type PresetSwitcherServiceCtor = new (
   config: PresetSwitcherServiceConfig,
 ) => PresetSwitcherServiceType;
@@ -99,7 +94,6 @@ let ancModeOsdLayout: OsdLayout | null = null;
 let connectivityOsdLayout: OsdLayout | null = null;
 let batteryLowOsdLayout: OsdLayout | null = null;
 let baseBatteryStatusOsdLayout: OsdLayout | null = null;
-let headsetBatterySwapOsdLayout: OsdLayout | null = null;
 let tray: Electron.Tray | null = null;
 let settings: UiSettings = DEFAULT_SETTINGS;
 let cachedState: AppState = mergeState();
@@ -213,21 +207,10 @@ const BATTERY_LOW_OSD_ACCENT = "#ef5350";
 const BASE_BATTERY_STATUS_OSD_BASE_SIZE = 98;
 const BASE_BATTERY_INSERTED_ACCENT = "#3fcf8e";
 const BASE_BATTERY_REMOVED_ACCENT = "#ef5350";
-const HEADSET_BATTERY_SWAP_OSD_BASE_SIZE = 108;
-const HEADSET_BATTERY_SWAP_ACCENT = "#3fcf8e";
 const FLYOUT_MIN_WIDTH = 320;
 const FLYOUT_MAX_WIDTH = 4096;
 const FLYOUT_MIN_HEIGHT = 260;
 const FLYOUT_MAX_HEIGHT = 2160;
-
-const batterySwapTrack = {
-  armed: false,
-  sawDisconnect: false,
-  sawReconnectWithHigherHeadset: false,
-  headsetBeforeSwap: null as number | null,
-  baseBeforeRemoval: null as number | null,
-};
-
 
 const APP_STATE_VERSION = 1;
 
@@ -787,14 +770,6 @@ function clearBaseBatteryStatusNotificationTimer(): void {
   notificationTimerService.clear("baseBatteryStatus");
 }
 
-function clearHeadsetBatterySwapNotificationTimer(): void {
-  notificationTimerService.clear("headsetBatterySwap");
-}
-
-function clearHeadsetBatterySwapDelayTimer(): void {
-  notificationTimerService.clear("headsetBatterySwapDelay");
-}
-
 /**
  * Notification close scheduling helpers.
  * All notifications except connectivity delegate to scheduleStandardNotificationClose.
@@ -844,10 +819,6 @@ function scheduleBatteryLowNotificationClose(win: BrowserWindow): void {
 
 function scheduleBaseBatteryStatusNotificationClose(win: BrowserWindow): void {
   scheduleStandardNotificationClose("baseBatteryStatus", win);
-}
-
-function scheduleHeadsetBatterySwapNotificationClose(win: BrowserWindow): void {
-  scheduleStandardNotificationClose("headsetBatterySwap", win);
 }
 
 function clampNumber(value: number, low: number, high: number): number {
@@ -973,10 +944,6 @@ function resolveUsbInputOsdLayout(): OsdLayout {
 
 function resolveBaseBatteryStatusOsdLayout(): OsdLayout {
   return resolveSquareOsdLayout(BASE_BATTERY_STATUS_OSD_BASE_SIZE, 82);
-}
-
-function resolveHeadsetBatterySwapOsdLayout(): OsdLayout {
-  return resolveSquareOsdLayout(HEADSET_BATTERY_SWAP_OSD_BASE_SIZE, 90);
 }
 
 function updateHeadsetVolumeNotificationScale(win: BrowserWindow, uiScale: number): void {
@@ -3565,304 +3532,6 @@ async function showBaseBatteryStatusNotification(payload: BaseBatteryStatusNotif
   });
 }
 
-function resetBatterySwapTrack(): void {
-  batterySwapTrack.armed = false;
-  batterySwapTrack.sawDisconnect = false;
-  batterySwapTrack.sawReconnectWithHigherHeadset = false;
-  batterySwapTrack.headsetBeforeSwap = null;
-  batterySwapTrack.baseBeforeRemoval = null;
-}
-
-function scheduleHeadsetBatterySwapNotification(payload: HeadsetBatterySwapNotificationPayload, delayMs: number): void {
-  clearHeadsetBatterySwapDelayTimer();
-  const wait = Math.max(0, Math.round(delayMs));
-  notificationTimerService.schedule("headsetBatterySwapDelay", wait, () => {
-    if (!isNotifEnabled("battery")) {
-      return;
-    }
-    void showHeadsetBatterySwapNotification(payload);
-  });
-}
-
-function updateHeadsetBatterySwapNotificationScale(win: BrowserWindow, uiScale: number): void {
-  const scale = clampNumber(uiScale, 0.75, 1.5).toFixed(4);
-  void win.webContents
-    .executeJavaScript(`window.__setHeadsetBatterySwapScale?.(${scale});`, true)
-    .catch(() => undefined);
-}
-
-function updateHeadsetBatterySwapNotificationPalette(win: BrowserWindow, palette: { panelBg: string; textColor: string }): void {
-  const safeBg = String(palette.panelBg || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-  const safeText = String(palette.textColor || "").trim().replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-  if (!safeBg || !safeText) {
-    return;
-  }
-  void win.webContents
-    .executeJavaScript(`window.__setHeadsetBatterySwapPalette?.('${safeBg}','${safeText}');`, true)
-    .catch(() => undefined);
-}
-
-function updateHeadsetBatterySwapNotificationUi(win: BrowserWindow, payload: HeadsetBatterySwapNotificationPayload): void {
-  const safePayload = JSON.stringify({
-    headsetBattery: toNullablePercent(payload.headsetBattery),
-  });
-  void win.webContents
-    .executeJavaScript(`window.__setHeadsetBatterySwapState?.(${safePayload});`, true)
-    .catch(() => undefined);
-}
-
-function applyHeadsetBatterySwapOsdLayout(win: BrowserWindow, layout: OsdLayout): void {
-  win.setMinimumSize(layout.width, layout.height);
-  win.setMaximumSize(layout.width, layout.height);
-  const bounds = win.getBounds();
-  if (bounds.x !== layout.x || bounds.y !== layout.y || bounds.width !== layout.width || bounds.height !== layout.height) {
-    win.setBounds(
-      {
-        x: layout.x,
-        y: layout.y,
-        width: layout.width,
-        height: layout.height,
-      },
-      false,
-    );
-  }
-  updateHeadsetBatterySwapNotificationScale(win, layout.uiScale);
-}
-
-async function showHeadsetBatterySwapNotification(payload: HeadsetBatterySwapNotificationPayload): Promise<void> {
-  const normalized: HeadsetBatterySwapNotificationPayload = {
-    headsetBattery: toNullablePercent(payload.headsetBattery),
-  };
-  headsetBatterySwapPendingValue = normalized;
-  const nextLayout = resolveHeadsetBatterySwapOsdLayout();
-  const theme = await getThemePayload();
-  const palette = resolveHeadsetVolumeNotificationPalette(theme);
-  const html = `<!doctype html>
-  <html>
-    <head>
-      <meta charset="utf-8" />
-      <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data:;" />
-      <style>
-        :root {
-          color-scheme: dark;
-          --s: ${nextLayout.uiScale.toFixed(4)};
-          --panel-bg: ${palette.panelBg};
-          --text-color: ${palette.textColor};
-          --accent: ${HEADSET_BATTERY_SWAP_ACCENT};
-          --bar-off: rgba(255,255,255,0.34);
-        }
-        html, body {
-          margin: 0;
-          width: 100%;
-          height: 100%;
-          background: transparent;
-          overflow: hidden;
-          font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
-        }
-        .shell {
-          width: 100%;
-          height: 100%;
-          box-sizing: border-box;
-          border-radius: 999px;
-          border: 1px solid rgba(255,255,255,0.14);
-          background: var(--panel-bg);
-          box-shadow: 0 8px 18px rgba(0,0,0,0.38);
-          display: grid;
-          place-items: center;
-          padding: calc(8px * var(--s));
-        }
-        .stack {
-          display: grid;
-          justify-items: center;
-          align-content: center;
-          row-gap: calc(3px * var(--s));
-          text-align: center;
-          line-height: 1;
-        }
-        .headset {
-          width: calc(17px * var(--s));
-          height: calc(17px * var(--s));
-          color: var(--text-color);
-        }
-        .headset svg {
-          width: 100%;
-          height: 100%;
-          display: block;
-        }
-        .status {
-          color: var(--accent);
-          font-size: calc(8px * var(--s));
-          font-weight: 700;
-          letter-spacing: 0.05em;
-        }
-        .battery-row {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: calc(3px * var(--s));
-          color: var(--text-color);
-        }
-        .battery {
-          width: calc(26px * var(--s));
-          height: calc(13px * var(--s));
-        }
-        .battery svg {
-          width: 100%;
-          height: 100%;
-          display: block;
-        }
-        .battery .body {
-          stroke: currentColor;
-        }
-        .battery .cap {
-          fill: currentColor;
-        }
-        .battery .bar {
-          fill: var(--bar-off);
-        }
-        .value {
-          color: var(--accent);
-          font-size: calc(8px * var(--s));
-          font-weight: 700;
-          min-width: 3ch;
-          text-align: right;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="shell" aria-label="Headset battery swapped">
-        <div class="stack">
-          <div class="headset" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="17" height="17">
-              <path d="M4 13a8 8 0 1 1 16 0v5a2 2 0 0 1-2 2h-1v-6h1v-1a6 6 0 1 0-12 0v1h1v6H6a2 2 0 0 1-2-2z" fill="currentColor" />
-            </svg>
-          </div>
-          <div class="status">BATTERY SWAPPED</div>
-          <div class="battery-row">
-            <div class="battery" aria-hidden="true">
-              <svg viewBox="0 0 24 14" width="24" height="12">
-                <rect class="body" x="1" y="2" width="19" height="10" rx="2" fill="none" stroke-width="1.8" />
-                <rect class="cap" x="21" y="5" width="2" height="4" rx="1" />
-                <rect id="hs1" class="bar" x="3" y="4" width="3" height="6" rx="0.8" />
-                <rect id="hs2" class="bar" x="7" y="4" width="3" height="6" rx="0.8" />
-                <rect id="hs3" class="bar" x="11" y="4" width="3" height="6" rx="0.8" />
-                <rect id="hs4" class="bar" x="15" y="4" width="3" height="6" rx="0.8" />
-              </svg>
-            </div>
-            <div id="level" class="value">--%</div>
-          </div>
-        </div>
-      </div>
-      <script>
-        (function () {
-          const root = document.documentElement;
-          const levelEl = document.getElementById("level");
-          const bars = [1, 2, 3, 4].map((n) => document.getElementById("hs" + n));
-          const paintBars = (activeBars) => {
-            const count = Math.max(0, Math.min(4, Math.round(Number(activeBars) || 0)));
-            bars.forEach((bar, idx) => {
-              if (!bar) return;
-              bar.style.fill = idx < count ? "var(--accent)" : "var(--bar-off)";
-            });
-          };
-          const applyState = (next) => {
-            const state = next && typeof next === "object" ? next : {};
-            const level = Number(state.headsetBattery);
-            if (!Number.isFinite(level)) {
-              paintBars(0);
-              if (levelEl) levelEl.textContent = "--%";
-              return;
-            }
-            const pct = Math.max(0, Math.min(100, Math.round(level)));
-            const activeBars = pct <= 0 ? 0 : Math.ceil(pct / 25);
-            paintBars(activeBars);
-            if (levelEl) levelEl.textContent = pct + "%";
-          };
-          window.__setHeadsetBatterySwapPalette = (bg, text) => {
-            const nextBg = String(bg || "").trim();
-            const nextText = String(text || "").trim();
-            if (nextBg) root.style.setProperty("--panel-bg", nextBg);
-            if (nextText) root.style.setProperty("--text-color", nextText);
-          };
-          window.__setHeadsetBatterySwapScale = (s) => {
-            const nextScale = Math.max(0.75, Math.min(1.5, Number(s) || 1));
-            root.style.setProperty("--s", String(nextScale));
-          };
-          window.__setHeadsetBatterySwapState = (next) => applyState(next);
-          applyState(${JSON.stringify(normalized)});
-        })();
-      </script>
-    </body>
-  </html>`;
-
-  if (headsetBatterySwapNotificationWindow && !headsetBatterySwapNotificationWindow.isDestroyed()) {
-    const win = headsetBatterySwapNotificationWindow;
-    if (!win.isVisible()) {
-      applyHeadsetBatterySwapOsdLayout(win, nextLayout);
-      headsetBatterySwapOsdLayout = nextLayout;
-      win.showInactive();
-    }
-    updateHeadsetBatterySwapNotificationPalette(win, palette);
-    updateHeadsetBatterySwapNotificationUi(win, headsetBatterySwapPendingValue ?? normalized);
-    scheduleHeadsetBatterySwapNotificationClose(win);
-    return;
-  }
-
-  const win = new BrowserWindow({
-    width: nextLayout.width,
-    height: nextLayout.height,
-    minWidth: nextLayout.width,
-    maxWidth: nextLayout.width,
-    minHeight: nextLayout.height,
-    maxHeight: nextLayout.height,
-    show: false,
-    frame: false,
-    transparent: true,
-    backgroundColor: "#00000000",
-    resizable: false,
-    movable: false,
-    minimizable: false,
-    maximizable: false,
-    fullscreenable: false,
-    skipTaskbar: true,
-    alwaysOnTop: true,
-    focusable: false,
-    hasShadow: false,
-  });
-
-  headsetBatterySwapNotificationWindow = win;
-  headsetBatterySwapOsdLayout = nextLayout;
-  await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
-  win.setAlwaysOnTop(true, "screen-saver");
-  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-
-  const showHeadsetBatterySwapOsd = () => {
-    if (win.isDestroyed()) {
-      return;
-    }
-    const layout = headsetBatterySwapOsdLayout ?? nextLayout;
-    applyHeadsetBatterySwapOsdLayout(win, layout);
-    updateHeadsetBatterySwapNotificationPalette(win, palette);
-    win.showInactive();
-    updateHeadsetBatterySwapNotificationUi(win, headsetBatterySwapPendingValue ?? normalized);
-    scheduleHeadsetBatterySwapNotificationClose(win);
-  };
-
-  win.once("ready-to-show", showHeadsetBatterySwapOsd);
-  win.webContents.once("did-finish-load", () => {
-    if (!win.isVisible()) {
-      showHeadsetBatterySwapOsd();
-    }
-  });
-  win.on("closed", () => {
-    if (headsetBatterySwapNotificationWindow === win) {
-      headsetBatterySwapNotificationWindow = null;
-    }
-    headsetBatterySwapPendingValue = null;
-    headsetBatterySwapOsdLayout = null;
-    clearHeadsetBatterySwapNotificationTimer();
-  });
-}
 
 function channelDisplayName(channel: string): string {
   if (channel === "chatRender") return "CHAT";
@@ -3934,52 +3603,6 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
         battery: nextBase,
       });
     }
-
-    // Headset battery swap detection sequence:
-    // 1) headset battery below 50%
-    // 2) base battery removed
-    // 3) headset disconnects and reconnects with higher headset battery
-    // 4) base battery returns with lower level than before removal
-    if (!batterySwapTrack.armed) {
-      const baselineHeadset = toNullablePercent(prevHeadset);
-      if (baselineHeadset != null && baselineHeadset < 50 && hadBattery && !hasBattery && prevBase != null) {
-        batterySwapTrack.armed = true;
-        batterySwapTrack.sawDisconnect = false;
-        batterySwapTrack.sawReconnectWithHigherHeadset = false;
-        batterySwapTrack.headsetBeforeSwap = baselineHeadset;
-        batterySwapTrack.baseBeforeRemoval = prevBase;
-      }
-    } else {
-      const prevConnected = previous.connected === true;
-      const nextConnected = next.connected === true;
-      if (prevConnected && !nextConnected) {
-        batterySwapTrack.sawDisconnect = true;
-      }
-      if (batterySwapTrack.sawDisconnect && !prevConnected && nextConnected) {
-        const beforeSwap = batterySwapTrack.headsetBeforeSwap;
-        const currentHeadset = toNullablePercent(nextHeadset);
-        batterySwapTrack.sawReconnectWithHigherHeadset =
-          beforeSwap != null && currentHeadset != null && currentHeadset > beforeSwap;
-      }
-      if (batterySwapTrack.sawReconnectWithHigherHeadset) {
-        const baseBeforeRemoval = batterySwapTrack.baseBeforeRemoval;
-        if (baseBeforeRemoval != null && hasBattery && nextBase != null && nextBase < baseBeforeRemoval) {
-          const currentHeadset = toNullablePercent(nextHeadset);
-          const waitForConnectivityMs = Math.max(0, connectivityNotificationHideAt - Date.now()) + 40;
-          scheduleHeadsetBatterySwapNotification({ headsetBattery: currentHeadset }, waitForConnectivityMs);
-          resetBatterySwapTrack();
-        }
-      }
-      const sequenceInvalidated =
-        (hasBattery && !batterySwapTrack.sawDisconnect) ||
-        (batterySwapTrack.sawDisconnect && previous.connected === false && next.connected === true && !batterySwapTrack.sawReconnectWithHigherHeadset);
-      if (sequenceInvalidated) {
-        resetBatterySwapTrack();
-      }
-    }
-  } else {
-    resetBatterySwapTrack();
-    clearHeadsetBatterySwapDelayTimer();
   }
   if (isNotifEnabled("presetChange")) {
     const prevPreset = previous.channel_preset ?? {};
@@ -4210,7 +3833,6 @@ function applyRuntimeServiceSettings(previousSettings: UiSettings | null = null)
     closeWindowIfOpen(connectivityNotificationWindow);
     closeWindowIfOpen(batteryLowNotificationWindow);
     closeWindowIfOpen(baseBatteryStatusNotificationWindow);
-    closeWindowIfOpen(headsetBatterySwapNotificationWindow);
     clearNotificationTimers();
     resetNotificationTransientState();
   }
@@ -4755,12 +4377,9 @@ function wireIpc(): void {
       connectivity: connectivityNotificationWindow,
       batteryLow: batteryLowNotificationWindow,
       baseBatteryStatus: baseBatteryStatusNotificationWindow,
-      headsetBatterySwap: headsetBatterySwapNotificationWindow,
     }),
     closeWindowIfOpen,
     syncHeadsetVolumeNotification: syncHeadsetVolumeNotificationFromSettings,
-    clearHeadsetBatterySwapDelayTimer: () => clearHeadsetBatterySwapDelayTimer(),
-    resetBatterySwapTrack: () => resetBatterySwapTrack(),
     getCachedState: () => cachedState,
     setCachedState: (state) => {
       cachedState = state;
@@ -4833,17 +4452,6 @@ function wireIpc(): void {
     normalizeError: (error) => normalizeError(error),
     showSystemNotification: (title, body) => showSystemNotification(title, body),
     showCustomNotificationOnOled: (title, body) => baseStationOledService.showCustomNotification(title, body),
-    getBatteryLowTestPayload: () => {
-      const threshold = clampPercent(settings.batteryLowThreshold);
-      const level = toNullablePercent(cachedState.headset_battery_percent) ?? Math.max(0, threshold - 1);
-      return { battery: level, threshold };
-    },
-    showBatteryLowNotification: (payload) => showBatteryLowNotification(payload),
-    getBatterySwapTestPayload: () => {
-      const level = toNullablePercent(cachedState.headset_battery_percent) ?? 74;
-      return { headsetBattery: level };
-    },
-    showHeadsetBatterySwapNotification: (payload) => showHeadsetBatterySwapNotification(payload),
   });
 
   const windowHandlers = createWindowIpcHandlers({
@@ -4922,8 +4530,6 @@ function wireIpc(): void {
     setSettings: (partial) => setSettingsHandler(partial),
     openGg: appHandlers.openGg,
     notifyCustom: appHandlers.notifyCustom,
-    notifyBatteryLowTest: appHandlers.notifyBatteryLowTest,
-    notifyBatterySwapTest: appHandlers.notifyBatterySwapTest,
     getMixerData: mixerHandlers.getMixerData,
     setMixerOutput: mixerHandlers.setMixerOutput,
     setMixerAppVolume: mixerHandlers.setMixerAppVolume,
@@ -5151,8 +4757,6 @@ function clearNotificationTimers(): void {
   clearConnectivityNotificationTimer();
   clearBatteryLowNotificationTimer();
   clearBaseBatteryStatusNotificationTimer();
-  clearHeadsetBatterySwapNotificationTimer();
-  clearHeadsetBatterySwapDelayTimer();
 }
 
 /**
@@ -5173,8 +4777,6 @@ function resetNotificationTransientState(): void {
   connectivityPendingValue = null;
   batteryLowPendingValue = null;
   baseBatteryStatusPendingValue = null;
-  headsetBatterySwapPendingValue = null;
-  resetBatterySwapTrack();
 }
 
 /**
@@ -5201,7 +4803,6 @@ function destroyNotificationOsdWindows(): void {
   connectivityNotificationWindow = destroyWindowRef(connectivityNotificationWindow);
   batteryLowNotificationWindow = destroyWindowRef(batteryLowNotificationWindow);
   baseBatteryStatusNotificationWindow = destroyWindowRef(baseBatteryStatusNotificationWindow);
-  headsetBatterySwapNotificationWindow = destroyWindowRef(headsetBatterySwapNotificationWindow);
 }
 
 app

@@ -200,9 +200,6 @@ export default function LiveApp({ windowMode }: LiveAppProps) {
           initialTab="app"
           onUpdate={(partial) => void actions.persistSettings(partial)}
           onRefreshDdcMonitors={() => void actions.refreshDdcMonitors()}
-          onTestNotification={() => void actions.notifyCustom("Control Centre", "Test notification from settings")}
-          onTestLowBatteryNotification={() => void actions.notifyBatteryLowTest()}
-          onTestBatterySwapNotification={() => void actions.notifyBatterySwapTest()}
         />
         <div className="standalone-actions">
           <button className="button button-compact" onClick={() => actions.closeCurrentWindow()}>
