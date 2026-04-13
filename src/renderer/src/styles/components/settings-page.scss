@@ -106,6 +106,104 @@
   margin-bottom: 6px;
 }
 
+// Two-column layout for settings sections
+.settings-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  align-items: start;
+}
+
+.settings-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  .settings-section {
+    margin-bottom: 0;
+  }
+}
+
+// Service control rows in Background Services
+.service-ctrl-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.1);
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.service-ctrl-name {
+  font-size: 0.82em;
+  flex: 1;
+  min-width: 0;
+}
+
+.service-ctrl-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.75em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  line-height: 1;
+
+  &:disabled {
+    opacity: 0.25;
+    cursor: default;
+  }
+
+  &--start {
+    background: rgba(98, 255, 134, 0.14);
+    color: #8dffa1;
+    border: 1px solid rgba(98, 255, 134, 0.35);
+
+    &:hover:not(:disabled) {
+      background: rgba(98, 255, 134, 0.28);
+    }
+  }
+
+  &--stop {
+    background: rgba(255, 110, 110, 0.12);
+    color: #ff8c8c;
+    border: 1px solid rgba(255, 110, 110, 0.32);
+
+    &:hover:not(:disabled) {
+      background: rgba(255, 110, 110, 0.24);
+    }
+  }
+
+  &--restart {
+    background: rgba(255, 200, 98, 0.12);
+    color: #ffd88c;
+    border: 1px solid rgba(255, 200, 98, 0.32);
+
+    &:hover:not(:disabled) {
+      background: rgba(255, 200, 98, 0.24);
+    }
+  }
+}
+
+// DDC primary/secondary monitors side by side
+.ddc-monitors-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+  align-items: start;
+
+  .settings-section {
+    margin-bottom: 0;
+  }
+}
+
 .accent-row {
   display: flex;
   align-items: center;

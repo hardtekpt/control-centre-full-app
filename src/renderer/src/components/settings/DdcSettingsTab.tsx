@@ -104,6 +104,7 @@ export default function DdcSettingsTab({
         </div>
       </div>
 
+      <div className="ddc-monitors-grid">
       <div className="settings-section">
         <div className="settings-section-title">Primary Monitor</div>
         <div
@@ -249,6 +250,7 @@ export default function DdcSettingsTab({
           </label>
         </div>
       </div>
+      </div>{/* end ddc-monitors-grid */}
 
       {knownInputCodes.length > 0 && (
         <div className="settings-section">
