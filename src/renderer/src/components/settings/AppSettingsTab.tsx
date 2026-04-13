@@ -88,23 +88,6 @@ export default function AppSettingsTab({ settings, shortcutDraft, onShortcutDraf
           <input type="checkbox" checked={serviceSettings.sonarApiEnabled !== false} onChange={(event) => updateServiceSetting("sonarApiEnabled", event.currentTarget.checked)} />
         </label>
         <label className="form-row">
-          <span>Sonar poll interval</span>
-          <div className="accent-row">
-            <input
-              className="text-input"
-              type="number"
-              min={1}
-              max={60}
-              step={1}
-              value={Math.max(1, Math.round((serviceSettings.sonarPollIntervalMs ?? 2000) / 1000))}
-              onChange={(event) =>
-                updateServiceSetting("sonarPollIntervalMs", Math.max(1, Math.round(Number(event.currentTarget.value) || 2)) * 1000)
-              }
-            />
-            <span>s</span>
-          </div>
-        </label>
-        <label className="form-row">
           <span>HID Events</span>
           <input type="checkbox" checked={serviceSettings.hidEventsEnabled !== false} onChange={(event) => updateServiceSetting("hidEventsEnabled", event.currentTarget.checked)} />
         </label>
