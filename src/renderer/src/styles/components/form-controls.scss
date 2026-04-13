@@ -3,7 +3,9 @@ select {
   border: 0;
   box-shadow: inset 0 0.25px 0 0.5px var(--button-border), 0 0.5px 1px 0 rgb(0 0 0 / 20%);
   border-radius: 6px;
-  padding: 4px 6px;
+  padding: 0 6px;
+  height: 28px;
+  box-sizing: border-box;
   color: var(--tray-text);
   width: 74px;
   max-width: 74px;
@@ -26,7 +28,9 @@ select option {
   border: 0;
   border-radius: 6px;
   color: var(--tray-text);
-  padding: 7px 9px;
+  padding: 0 9px;
+  height: 28px;
+  box-sizing: border-box;
 }
 
 .button {
