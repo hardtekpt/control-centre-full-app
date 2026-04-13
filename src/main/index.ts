@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeTheme, screen as electronScreen, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, screen as electronScreen, shell } from "electron";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -29,6 +29,8 @@ import {
 import {
   IPC_EVENT,
   type DdcMonitorPayload,
+  type ExportSettingsResponse,
+  type ImportSettingsResponse,
   type ServiceStatusPayload,
 } from "../shared/ipc";
 import { registerCoreIpcHandlers } from "./ipc/registerCoreHandlers";
@@ -4850,6 +4852,43 @@ function wireIpc(): void {
     fitFlyoutToContent: (width, height) => fitFlyoutToContent(width, height),
   });
 
+  async function exportSettings(): Promise<ExportSettingsResponse> {
+    const result = await dialog.showSaveDialog({
+      title: "Export Control Centre Settings",
+      defaultPath: "control-centre-settings.json",
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (result.canceled || !result.filePath) {
+      return { ok: false, cancelled: true };
+    }
+    try {
+      fs.writeFileSync(result.filePath, JSON.stringify(settings, null, 2), "utf-8");
+      return { ok: true, path: result.filePath };
+    } catch (err) {
+      return { ok: false, error: normalizeError(err) };
+    }
+  }
+
+  async function importSettingsFromFile(): Promise<ImportSettingsResponse> {
+    const result = await dialog.showOpenDialog({
+      title: "Import Control Centre Settings",
+      filters: [{ name: "JSON", extensions: ["json"] }],
+      properties: ["openFile"],
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { ok: false, cancelled: true };
+    }
+    try {
+      const raw = fs.readFileSync(result.filePaths[0], "utf-8");
+      const parsed: unknown = JSON.parse(raw);
+      const validated = mergeSettings(parsed as Partial<typeof settings>);
+      setSettingsHandler(validated);
+      return { ok: true, settings: validated };
+    } catch (err) {
+      return { ok: false, error: normalizeError(err) };
+    }
+  }
+
   registerCoreIpcHandlers({
     ipcMain,
     getInitialPayload: async () => ({
@@ -4892,6 +4931,8 @@ function wireIpc(): void {
     getDdcMonitors: ddcHandlers.getDdcMonitors,
     setDdcBrightness: ddcHandlers.setDdcBrightness,
     setDdcInputSource: ddcHandlers.setDdcInputSource,
+    exportSettings,
+    importSettings: importSettingsFromFile,
   });
 }
 

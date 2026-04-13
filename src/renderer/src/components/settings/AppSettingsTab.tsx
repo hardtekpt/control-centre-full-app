@@ -8,6 +8,8 @@ interface AppSettingsTabProps {
   onShortcutDraftChange: (value: string) => void;
   onShortcutDraftCommit: () => void;
   onUpdate: (partial: Partial<UiSettings>) => void;
+  onExportSettings: () => void;
+  onImportSettings: () => void;
 }
 
 interface ServiceEntry {
@@ -36,6 +38,8 @@ export default function AppSettingsTab({
   onShortcutDraftChange,
   onShortcutDraftCommit,
   onUpdate,
+  onExportSettings,
+  onImportSettings,
 }: AppSettingsTabProps) {
   const serviceSettings = settings.services;
 
@@ -110,6 +114,26 @@ export default function AppSettingsTab({
                 placeholder="CommandOrControl+Shift+A"
               />
             </label>
+          </div>
+
+          <div className="settings-section">
+            <div className="settings-section-title">Configuration</div>
+            <div className="settings-action-row">
+              <button
+                className="button"
+                title="Save all current settings to a JSON file"
+                onClick={onExportSettings}
+              >
+                Export settings
+              </button>
+              <button
+                className="button"
+                title="Load settings from a previously exported JSON file"
+                onClick={onImportSettings}
+              >
+                Import settings
+              </button>
+            </div>
           </div>
         </div>
 

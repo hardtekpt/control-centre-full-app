@@ -537,6 +537,8 @@ export default function SettingsPage({
             onShortcutDraftChange={setShortcutDraft}
             onShortcutDraftCommit={() => onUpdate({ toggleShortcut: shortcutDraft })}
             onUpdate={onUpdate}
+            onExportSettings={() => { void window.arctisBridge.exportSettings(); }}
+            onImportSettings={() => { void window.arctisBridge.importSettings(); }}
           />
         )}
 

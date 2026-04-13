@@ -26,6 +26,8 @@ const IPC_INVOKE = {
   DDC_SET_INPUT_SOURCE: "ddc:set-input-source",
   WINDOW_SET_PINNED: "window:set-pinned",
   SETTINGS_SET: "settings:set",
+  SETTINGS_EXPORT: "settings:export",
+  SETTINGS_IMPORT: "settings:import",
 } as const;
 
 const IPC_SEND = {
@@ -81,6 +83,8 @@ const api: ArctisBridgeApi = {
   setFlyoutPinned: (pinned) => invoke(IPC_INVOKE.WINDOW_SET_PINNED, pinned),
   reportFlyoutContentSize: (width, height) => ipcRenderer.send(IPC_SEND.WINDOW_FIT_CONTENT, { width, height }),
   setSettings: (settings) => invoke(IPC_INVOKE.SETTINGS_SET, settings),
+  exportSettings: () => invoke(IPC_INVOKE.SETTINGS_EXPORT),
+  importSettings: () => invoke(IPC_INVOKE.SETTINGS_IMPORT),
   onState: (cb) => subscribe(IPC_EVENT.BACKEND_STATE, cb),
   onPresets: (cb) => subscribe(IPC_EVENT.BACKEND_PRESETS, cb),
   onStatus: (cb) => subscribe(IPC_EVENT.BACKEND_STATUS, cb),
