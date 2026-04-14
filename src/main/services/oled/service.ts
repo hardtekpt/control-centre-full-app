@@ -57,6 +57,36 @@ interface CustomOledNotification {
   expiresAt: number;
 }
 
+/** Notification kind used by the typed OLED notification renderer. */
+export type OledNotificationKind =
+  | "connectivity"
+  | "usbInput"
+  | "ancMode"
+  | "sidetone"
+  | "micMute"
+  | "headsetChatMix"
+  | "headsetVolume"
+  | "battery"
+  | "presetChange"
+  | "oled"
+  | "appInfo"
+  | "generic";
+
+interface TypedOledNotification {
+  kind: OledNotificationKind;
+  /** Short uppercase label shown in the inverted header band. */
+  header: string;
+  /** Main label line below the icon. */
+  title: string;
+  /** Value string (e.g. "85%" or "MUTED"). */
+  valueText: string;
+  /** 0-100 for animated progress bar; null skips the bar. */
+  valuePercent: number | null;
+  expiresAt: number;
+  /** Incremented each render frame — drives the progress bar grow-in animation. */
+  animFrameIndex: number;
+}
+
 const DEFAULT_CONFIG: BaseStationOledConfig = {
   enabled: false,
   refreshIntervalMs: 15_000,
@@ -101,6 +131,7 @@ export class BaseStationOledService extends EventEmitter {
   private lastError = "";
   private lastPublishAt = 0;
   private customNotification: CustomOledNotification | null = null;
+  private typedNotification: TypedOledNotification | null = null;
 
   public configure(partial: Partial<BaseStationOledConfig>): void {
     const previousInterval = this.config.refreshIntervalMs;
@@ -121,6 +152,7 @@ export class BaseStationOledService extends EventEmitter {
     };
     if (!this.config.showCustomNotifications) {
       this.customNotification = null;
+      this.typedNotification = null;
     }
     if (this.running && previousInterval !== this.config.refreshIntervalMs) {
       this.restartTimer();
@@ -151,6 +183,50 @@ export class BaseStationOledService extends EventEmitter {
     this.requestRefresh(true);
   }
 
+  /**
+   * Shows a semantically typed OLED notification with a dedicated layout:
+   * an inverted header band, an icon, label + value text, and an animated
+   * progress bar that sweeps in over ~700 ms.
+   *
+   * Typed notifications take priority over legacy showCustomNotification calls.
+   * The caller is responsible for checking that the notification type is enabled
+   * in settings before calling this method.
+   */
+  public showTypedNotification(
+    kind: OledNotificationKind,
+    title: string,
+    valueText: string,
+    valuePercent?: number,
+  ): void {
+    if (!this.config.showCustomNotifications || !this.running) {
+      return;
+    }
+    this.typedNotification = {
+      kind,
+      header: normalizeFrameLine(headerForKind(kind), 20),
+      title: normalizeFrameLine(title, 14),
+      valueText: normalizeFrameLine(valueText, 10),
+      valuePercent:
+        typeof valuePercent === "number" && Number.isFinite(valuePercent) ? clampPercent(valuePercent) : null,
+      expiresAt: Date.now() + this.config.customNotificationDurationMs,
+      animFrameIndex: 0,
+    };
+    this.customNotification = null;
+    this.requestRefresh(true);
+    // Drive 3 rapid re-renders so the progress bar animates on-screen.
+    this.scheduleAnimFrame(180);
+    this.scheduleAnimFrame(360);
+    this.scheduleAnimFrame(540);
+  }
+
+  private scheduleAnimFrame(delayMs: number): void {
+    setTimeout(() => {
+      if (this.running && this.typedNotification && Date.now() < this.typedNotification.expiresAt) {
+        this.requestRefresh(true);
+      }
+    }, delayMs);
+  }
+
   public start(): void {
     if (this.running) {
       return;
@@ -176,6 +252,7 @@ export class BaseStationOledService extends EventEmitter {
       this.pendingRefreshTimer = null;
     }
     this.customNotification = null;
+    this.typedNotification = null;
     this.returnToSteelSeriesUi();
     this.emit("status", "Base Station OLED service stopped.");
   }
@@ -230,12 +307,41 @@ export class BaseStationOledService extends EventEmitter {
       return;
     }
     this.lastPublishAt = Date.now();
-    const rendered = buildRenderedFrame(this.config, this.appState, this.customNotification);
+    const now = Date.now();
+
+    let rendered: { frame: OledServiceFrame; bitmap: Uint8Array };
+    const activeTyped =
+      this.typedNotification && now < this.typedNotification.expiresAt ? this.typedNotification : null;
+
+    if (activeTyped) {
+      const bitmap = renderTypedNotificationBitmap(activeTyped);
+      // Advance animation counter so the next frame shows more progress.
+      activeTyped.animFrameIndex += 1;
+      rendered = {
+        frame: {
+          line1: activeTyped.header,
+          line2: activeTyped.title + (activeTyped.valueText ? ` ${activeTyped.valueText}` : ""),
+          generatedAtIso: new Date().toISOString(),
+        },
+        bitmap,
+      };
+    } else {
+      if (this.typedNotification) {
+        this.typedNotification = null;
+      }
+      rendered = buildRenderedFrame(this.config, this.appState, this.customNotification);
+    }
+
     this.lastFrame = rendered.frame;
     this.emit("frame", rendered.frame);
+
+    if (this.typedNotification && Date.now() >= this.typedNotification.expiresAt) {
+      this.typedNotification = null;
+    }
     if (this.customNotification && Date.now() >= this.customNotification.expiresAt) {
       this.customNotification = null;
     }
+
     try {
       this.writeFrameToDevice(rendered.bitmap);
       if (this.lastError) {
@@ -597,6 +703,123 @@ function renderCustomNotificationBitmap(title: string, body: string): Uint8Array
   return pixels;
 }
 
+/**
+ * Renders a typed OLED notification with:
+ *  - Inverted header band (white bg, black text) showing the event type.
+ *  - 12×12 icon on the left.
+ *  - Title + value text to the right of the icon.
+ *  - Optional animated progress bar that sweeps from 0 → target over 4 frames.
+ */
+function renderTypedNotificationBitmap(notif: TypedOledNotification): Uint8Array {
+  const W = SCREEN_WIDTH;
+  const H = SCREEN_HEIGHT;
+  const pixels = new Uint8Array(W * H);
+
+  // Header band: rows 0–9 filled white, text rendered inverted (black on white).
+  drawRect(pixels, W, H, 0, 0, W, 10, true);
+  drawCenteredTextInverted(pixels, W, H, notif.header, 1);
+
+  // Separator below the header.
+  drawHorizontalLine(pixels, W, H, 0, W - 1, 10);
+
+  // Icon at (3, 13).
+  drawNotifIcon(pixels, 3, 13, notif.kind);
+
+  // Label and value text to the right of the icon.
+  const textX = 20;
+  drawText(pixels, W, H, notif.title, textX, 13);
+  if (notif.valueText) {
+    drawText(pixels, W, H, notif.valueText, textX, 23);
+  }
+
+  // Animated progress bar (ease-out grow-in over ANIM_FRAMES frames).
+  if (notif.valuePercent != null) {
+    const ANIM_FRAMES = 4;
+    const raw = notif.animFrameIndex >= ANIM_FRAMES ? 1 : notif.animFrameIndex / ANIM_FRAMES;
+    // Ease-out: f(t) = t*(2-t)
+    const eased = raw < 1 ? raw * (2 - raw) : 1;
+    const animatedPercent = Math.round(notif.valuePercent * eased);
+    drawProgressBar(pixels, textX, 36, W - textX - 4, 5, animatedPercent);
+  }
+
+  // Outer border.
+  drawRectOutline(pixels, W, H, 0, 0, W, H);
+
+  return pixels;
+}
+
+function headerForKind(kind: OledNotificationKind): string {
+  const labels: Record<OledNotificationKind, string> = {
+    connectivity: "CONNECTION",
+    usbInput: "USB INPUT",
+    ancMode: "ANC MODE",
+    sidetone: "SIDETONE",
+    micMute: "MIC MUTE",
+    headsetChatMix: "CHAT MIX",
+    headsetVolume: "VOLUME",
+    battery: "BATTERY",
+    presetChange: "PRESET",
+    oled: "DISPLAY",
+    appInfo: "INFO",
+    generic: "NOTIFICATION",
+  };
+  return labels[kind] ?? "NOTIFICATION";
+}
+
+/** Draws text centered horizontally, clearing pixels (black on filled-white background). */
+function drawCenteredTextInverted(
+  pixels: Uint8Array,
+  width: number,
+  height: number,
+  text: string,
+  y: number,
+): void {
+  const normalized = normalizeFrameLine(text, 20);
+  if (!normalized) {
+    return;
+  }
+  const textWidth = normalized.length > 0 ? normalized.length * (FONT_WIDTH + FONT_SPACING) - FONT_SPACING : 0;
+  const x = Math.max(2, Math.floor((width - textWidth) / 2));
+  let cursorX = x;
+  for (const char of normalized) {
+    drawGlyphInverted(pixels, width, height, cursorX, y, char);
+    cursorX += FONT_WIDTH + FONT_SPACING;
+  }
+}
+
+/** Draws a single glyph by clearing pixels (for use on a white/filled background). */
+function drawGlyphInverted(
+  pixels: Uint8Array,
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+  char: string,
+): void {
+  const glyph = FONT_5X7[char] ?? FONT_5X7["?"];
+  for (let row = 0; row < FONT_HEIGHT; row += 1) {
+    const pattern = glyph[row];
+    for (let col = 0; col < FONT_WIDTH; col += 1) {
+      if (pattern[col] === "1") {
+        setPixel(pixels, width, height, x + col, y + row, 0);
+      }
+    }
+  }
+}
+
+/** Draws the 12×12 icon for a notification kind at the given position. */
+function drawNotifIcon(pixels: Uint8Array, x: number, y: number, kind: OledNotificationKind): void {
+  const icon = NOTIF_ICON_BITMAPS[kind] ?? NOTIF_ICON_BITMAPS.generic;
+  for (let row = 0; row < icon.length; row += 1) {
+    const line = icon[row];
+    for (let col = 0; col < line.length; col += 1) {
+      if (line[col] === "1") {
+        setPixel(pixels, SCREEN_WIDTH, SCREEN_HEIGHT, x + col, y + row, 1);
+      }
+    }
+  }
+}
+
 function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
@@ -936,4 +1159,187 @@ const FONT_5X7: Record<string, string[]> = {
   X: ["10001", "10001", "01010", "00100", "01010", "10001", "10001"],
   Y: ["10001", "10001", "01010", "00100", "00100", "00100", "00100"],
   Z: ["11111", "00001", "00010", "00100", "01000", "10000", "11111"],
+};
+
+/**
+ * 12×12 pixel icon bitmaps for each typed OLED notification kind.
+ * Each row is a 12-character string of "0"/"1" values.
+ */
+const NOTIF_ICON_BITMAPS: Record<OledNotificationKind, string[]> = {
+  // Reuse dashboard widget icons where they match semantically.
+  headsetVolume: [
+    "000000000000",
+    "000110000000",
+    "001111000100",
+    "011111001110",
+    "111111011111",
+    "111111011111",
+    "111111011111",
+    "011111001110",
+    "001111000100",
+    "000110000000",
+    "000000000000",
+    "000000000000",
+  ],
+  headsetChatMix: [
+    "000110000110",
+    "001111001111",
+    "011001011001",
+    "011001011001",
+    "001111001111",
+    "000110000110",
+    "000000000000",
+    "001111111100",
+    "000001100000",
+    "000001100000",
+    "001111111100",
+    "000000000000",
+  ],
+  micMute: [
+    "000111100000",
+    "001111110000",
+    "001100110000",
+    "001100110000",
+    "001100110000",
+    "001111110000",
+    "000111100000",
+    "000011000000",
+    "001111110000",
+    "000011000000",
+    "000111100000",
+    "000000000000",
+  ],
+  ancMode: [
+    "000011000000",
+    "000111100000",
+    "001100110000",
+    "011000011000",
+    "110001001100",
+    "110011001100",
+    "110001001100",
+    "011000011000",
+    "001100110000",
+    "000111100000",
+    "000011000000",
+    "000000000000",
+  ],
+  battery: [
+    "001111111100",
+    "011000000110",
+    "110111111011",
+    "110111111011",
+    "110111111011",
+    "110111111011",
+    "110111111011",
+    "110111111011",
+    "011000000110",
+    "001111111100",
+    "000001100000",
+    "000001100000",
+  ],
+  // Signal-strength bars icon (4 bars of increasing height, left to right).
+  connectivity: [
+    "000000000010",
+    "000000000010",
+    "000000000010",
+    "000000000010",
+    "000000010010",
+    "000000010010",
+    "000010010010",
+    "000010010010",
+    "010010010010",
+    "010010010010",
+    "010010010010",
+    "000000000000",
+  ],
+  // USB trident: Y-shaped branches at top + rectangular connector at bottom.
+  usbInput: [
+    "000001100000",
+    "000001100000",
+    "100001100010",
+    "110001100110",
+    "100001100010",
+    "000001100000",
+    "000001100000",
+    "000011110000",
+    "000100001000",
+    "000100001000",
+    "000011110000",
+    "000000000000",
+  ],
+  // Microphone + small outgoing-sound arc (sidetone feedback).
+  sidetone: [
+    "000111100000",
+    "001111110000",
+    "001100110000",
+    "001100110000",
+    "001100110000",
+    "001111110000",
+    "000111100000",
+    "000011000000",
+    "001111110010",
+    "000011000110",
+    "000111100010",
+    "000000000000",
+  ],
+  // Eighth note: filled oval head + stem + flag.
+  presetChange: [
+    "000000001000",
+    "000000001100",
+    "000000001100",
+    "000000001000",
+    "000000001000",
+    "000000001000",
+    "000000001000",
+    "000011111000",
+    "000111111000",
+    "000111111000",
+    "000011110000",
+    "000000000000",
+  ],
+  // Sun / brightness: solid circle + 4 directional rays.
+  oled: [
+    "000011000000",
+    "000011000000",
+    "100011000010",
+    "011000001100",
+    "001111110000",
+    "001111110000",
+    "001111110000",
+    "011000001100",
+    "100011000010",
+    "000011000000",
+    "000011000000",
+    "000000000000",
+  ],
+  // Information circle: "i" inside a ring.
+  appInfo: [
+    "000111110000",
+    "001000001000",
+    "010001100100",
+    "010001100100",
+    "010011110100",
+    "010011110100",
+    "010011110100",
+    "010001100100",
+    "010001100100",
+    "010000000100",
+    "001000001000",
+    "000111110000",
+  ],
+  // Generic fallback: exclamation mark in a diamond.
+  generic: [
+    "000011000000",
+    "000111100000",
+    "001111110000",
+    "001110110000",
+    "001110110000",
+    "001111110000",
+    "001110110000",
+    "001110110000",
+    "001111110000",
+    "000111100000",
+    "000011000000",
+    "000000000000",
+  ],
 };

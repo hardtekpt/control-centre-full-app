@@ -22,6 +22,7 @@ import {
   CHANNELS,
   type AppState,
   type ChannelKey,
+  type NotificationKey,
   type PresetMap,
   type ShortcutBinding,
   type UiSettings,
@@ -749,6 +750,20 @@ async function fetchDdcMonitorsIfStale(force = false): Promise<DdcMonitor[]> {
 
 function isNotifEnabled(key: keyof UiSettings["notifications"]): boolean {
   return isServiceEnabled("notificationsEnabled") && settings.notifications?.[key] !== false;
+}
+
+/**
+ * Returns true when the OLED display service should show a typed notification
+ * for the given event key.  Requires the OLED service to be enabled, custom
+ * notifications to be turned on, and the specific key to not be explicitly
+ * disabled in the per-key oledNotifications map.
+ */
+function isOledNotifEnabled(key: NotificationKey): boolean {
+  return (
+    isServiceEnabled("oledDisplayEnabled") &&
+    settings.baseStationOled.showCustomNotifications === true &&
+    settings.baseStationOled.oledNotifications?.[key] !== false
+  );
 }
 
 function isHeadsetChatMixEnabled(): boolean {
@@ -3600,31 +3615,74 @@ function getPresetDisplayName(channel: ChannelKey, presetId: string): string {
 }
 
 function notifyStateChanges(previous: AppState, next: AppState): void {
-  if (isNotifEnabled("connectivity")) {
-    if (previous.connected !== next.connected && next.connected != null) {
+  const connectivityChanged = previous.connected !== next.connected && next.connected != null;
+  if (connectivityChanged) {
+    if (isNotifEnabled("connectivity")) {
       void showConnectivityNotification({
-        connected: next.connected,
+        connected: next.connected as boolean,
         wireless: Boolean(next.wireless),
         bluetooth: Boolean(next.bluetooth),
         battery: next.headset_battery_percent,
       });
     }
+    if (isOledNotifEnabled("connectivity")) {
+      const connType = next.wireless ? "WIRELESS" : next.bluetooth ? "BLUETOOTH" : "WIRED";
+      baseStationOledService.showTypedNotification(
+        "connectivity",
+        next.connected ? "CONNECTED" : "DISCONNECTED",
+        connType,
+      );
+    }
   }
-  if (isNotifEnabled("ancMode") && previous.anc_mode !== next.anc_mode && next.anc_mode != null) {
-    void showAncModeNotification(next.anc_mode);
+
+  if (previous.anc_mode !== next.anc_mode && next.anc_mode != null) {
+    if (isNotifEnabled("ancMode")) {
+      void showAncModeNotification(next.anc_mode);
+    }
+    if (isOledNotifEnabled("ancMode")) {
+      const modeText = String(next.anc_mode).trim().toUpperCase() || "OFF";
+      baseStationOledService.showTypedNotification("ancMode", "ANC MODE", modeText);
+    }
   }
-  if (isNotifEnabled("oled") && previous.oled_brightness !== next.oled_brightness && next.oled_brightness != null) {
-    void showOledNotification(next.oled_brightness);
+
+  if (previous.oled_brightness !== next.oled_brightness && next.oled_brightness != null) {
+    if (isNotifEnabled("oled")) {
+      void showOledNotification(next.oled_brightness);
+    }
+    if (isOledNotifEnabled("oled")) {
+      const brightness = Math.round(next.oled_brightness);
+      baseStationOledService.showTypedNotification("oled", "DISPLAY", `${brightness}%`, brightness);
+    }
   }
-  if (isNotifEnabled("sidetone") && previous.sidetone_level !== next.sidetone_level && next.sidetone_level != null) {
-    void showSidetoneNotification(next.sidetone_level);
+
+  if (previous.sidetone_level !== next.sidetone_level && next.sidetone_level != null) {
+    if (isNotifEnabled("sidetone")) {
+      void showSidetoneNotification(next.sidetone_level);
+    }
+    if (isOledNotifEnabled("sidetone")) {
+      const level = Math.round(next.sidetone_level);
+      baseStationOledService.showTypedNotification("sidetone", "SIDETONE", `${level}%`, level);
+    }
   }
-  if (isNotifEnabled("micMute") && previous.mic_mute !== next.mic_mute && next.mic_mute != null) {
-    void showMicMuteNotification(next.mic_mute);
+
+  if (previous.mic_mute !== next.mic_mute && next.mic_mute != null) {
+    if (isNotifEnabled("micMute")) {
+      void showMicMuteNotification(next.mic_mute);
+    }
+    if (isOledNotifEnabled("micMute")) {
+      baseStationOledService.showTypedNotification("micMute", "MIC MUTE", next.mic_mute ? "MUTED" : "ACTIVE");
+    }
   }
-  if (isNotifEnabled("usbInput") && previous.current_usb_input !== next.current_usb_input && next.current_usb_input != null) {
-    void showUsbInputNotification(next.current_usb_input);
+
+  if (previous.current_usb_input !== next.current_usb_input && next.current_usb_input != null) {
+    if (isNotifEnabled("usbInput")) {
+      void showUsbInputNotification(next.current_usb_input);
+    }
+    if (isOledNotifEnabled("usbInput")) {
+      baseStationOledService.showTypedNotification("usbInput", "USB INPUT", `USB ${next.current_usb_input}`);
+    }
   }
+
   const volumeChanged = previous.headset_volume_percent !== next.headset_volume_percent;
   const chatMixChanged = previous.chat_mix_balance !== next.chat_mix_balance;
   const chatMixOsdEnabled = isHeadsetChatMixEnabled();
@@ -3635,16 +3693,26 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
       chatMix: chatMixOsdEnabled && chatMixChanged ? next.chat_mix_balance : undefined,
     });
   }
-  if (isNotifEnabled("battery")) {
+  if (volumeChanged && next.headset_volume_percent != null && isOledNotifEnabled("headsetVolume")) {
+    const vol = Math.round(next.headset_volume_percent);
+    baseStationOledService.showTypedNotification("headsetVolume", "HEADSET VOL", `${vol}%`, vol);
+  } else if (chatMixChanged && chatMixOsdEnabled && next.chat_mix_balance != null && isOledNotifEnabled("headsetChatMix")) {
+    const mix = Math.round(next.chat_mix_balance);
+    baseStationOledService.showTypedNotification("headsetChatMix", "CHAT MIX", `${mix}%`, mix);
+  }
+
+  if (isNotifEnabled("battery") || isOledNotifEnabled("battery")) {
     const prevHeadset = previous.headset_battery_percent;
     const nextHeadset = next.headset_battery_percent;
     const threshold = clampPercent(settings.batteryLowThreshold);
     const remainedConnected = previous.connected === true && next.connected === true;
     if (remainedConnected && prevHeadset != null && nextHeadset != null && prevHeadset >= threshold && nextHeadset < threshold) {
-      void showBatteryLowNotification({
-        battery: nextHeadset,
-        threshold,
-      });
+      if (isNotifEnabled("battery")) {
+        void showBatteryLowNotification({ battery: nextHeadset, threshold });
+      }
+      if (isOledNotifEnabled("battery")) {
+        baseStationOledService.showTypedNotification("battery", "BATTERY LOW", `${nextHeadset}%`, nextHeadset);
+      }
     }
     const prevBase = toNullablePercent(previous.base_battery_percent);
     const nextBase = toNullablePercent(next.base_battery_percent);
@@ -3652,19 +3720,34 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
     const hadBattery = prevBase != null && prevBase > 0;
     const hasBattery = nextBase != null && nextBase > 0;
     if (hadBattery !== hasBattery) {
-      void showBaseBatteryStatusNotification({
-        inserted: hasBattery,
-        battery: nextBase,
-      });
+      if (isNotifEnabled("battery")) {
+        void showBaseBatteryStatusNotification({ inserted: hasBattery, battery: nextBase });
+      }
+      if (isOledNotifEnabled("battery")) {
+        const baseText = hasBattery ? `${nextBase ?? 0}%` : "REMOVED";
+        baseStationOledService.showTypedNotification(
+          "battery",
+          "BASE BATTERY",
+          baseText,
+          hasBattery ? (nextBase ?? 0) : 0,
+        );
+      }
     }
   }
-  if (isNotifEnabled("presetChange")) {
+
+  if (isNotifEnabled("presetChange") || isOledNotifEnabled("presetChange")) {
     const prevPreset = previous.channel_preset ?? {};
     const nextPreset = next.channel_preset ?? {};
     for (const [channel, nextValue] of Object.entries(nextPreset) as Array<[ChannelKey, string | null | undefined]>) {
       const prevValue = prevPreset[channel];
       if (nextValue !== prevValue && nextValue != null && String(nextValue).trim()) {
-        void showPresetChangeNotification(channel, getPresetDisplayName(channel, String(nextValue)));
+        const presetName = getPresetDisplayName(channel, String(nextValue));
+        if (isNotifEnabled("presetChange")) {
+          void showPresetChangeNotification(channel, presetName);
+        }
+        if (isOledNotifEnabled("presetChange")) {
+          baseStationOledService.showTypedNotification("presetChange", channel.toUpperCase(), presetName);
+        }
       }
     }
   }

@@ -83,6 +83,8 @@ export interface UiSettings {
     showBatteryInfo: boolean;
     showChatMix: boolean;
     showCustomNotifications: boolean;
+    /** Per-event OLED notification toggles (independent of desktop notification flags). */
+    oledNotifications: Partial<Record<NotificationKey, boolean>>;
   };
   ddc: {
     apiBaseUrl: string;
