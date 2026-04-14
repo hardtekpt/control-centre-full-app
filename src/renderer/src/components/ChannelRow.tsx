@@ -1,4 +1,4 @@
-import { type WheelEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type WheelEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import VolumeIcon from "./icons/VolumeIcon";
 
 function clampPercent(value: number): number {
@@ -24,6 +24,8 @@ export default function ChannelRow(props: ChannelRowProps) {
   const volumePreviewTimer = useRef<number | null>(null);
   const lastPreviewVolume = useRef<number | null>(null);
   const selectRef = useRef<HTMLSelectElement | null>(null);
+  const appsRef = useRef<HTMLDivElement | null>(null);
+  const [appsMarquee, setAppsMarquee] = useState<{ active: boolean; duration: number }>({ active: false, duration: 8 });
   const pendingWheelVolume = useRef<number>(props.volume);
   useEffect(() => setDraftVolume(props.volume), [props.volume]);
   useEffect(() => {
@@ -44,6 +46,34 @@ export default function ChannelRow(props: ChannelRowProps) {
     [],
   );
   const appText = useMemo(() => (props.apps.length ? props.apps.join(", ") : "-"), [props.apps]);
+
+  /** Syncs the apps ticker width to the preset select and activates marquee when text overflows. */
+  useLayoutEffect(() => {
+    const container = appsRef.current;
+    const selectEl = selectRef.current;
+    if (!container) return;
+
+    // Apply select width to the apps container so both stay visually aligned.
+    if (selectEl) {
+      const w = selectEl.offsetWidth;
+      container.style.width = `${w}px`;
+    }
+
+    const rafId = requestAnimationFrame(() => {
+      const inner = container.firstElementChild as HTMLElement | null;
+      if (!inner) return;
+      // Inner contains duplicated text (text + separator + text) so one copy = half scrollWidth.
+      const singleWidth = inner.scrollWidth / 2;
+      const containerWidth = container.clientWidth;
+      const overflows = singleWidth > containerWidth + 1;
+      setAppsMarquee({
+        active: overflows,
+        // Constant px/s speed so longer text doesn't feel slower.
+        duration: overflows ? Math.max(3, singleWidth / 38) : 8,
+      });
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [appText]);
   const verticalProgressStyle = useMemo(
     () => ({ height: `${Math.max(0, Math.min(100, draftVolume))}%` }),
     [draftVolume],
@@ -189,8 +219,14 @@ export default function ChannelRow(props: ChannelRowProps) {
         </select>
       )}
       {props.channel === "master" && <div className="preset-placeholder" />}
-      <div className="apps" title={appText}>
-        {appText}
+      <div ref={appsRef} className="apps" title={appText}>
+        <span
+          className={`apps-inner${appsMarquee.active ? " is-scrolling" : ""}`}
+          style={appsMarquee.active ? { animationDuration: `${appsMarquee.duration}s` } : undefined}
+        >
+          {appText}
+          {appsMarquee.active && <>\u00a0\u00a0\u00a0\u00a0\u00a0{appText}</>}
+        </span>
       </div>
     </div>
   );

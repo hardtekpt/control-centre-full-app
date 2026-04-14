@@ -79,10 +79,10 @@
   font-size: 0.8em;
   opacity: 0.74;
   text-align: center;
-  width: 100%;
   line-height: 1.3;
-  max-height: 2.6em;
   overflow: hidden;
+  white-space: nowrap;
+  // Width is set dynamically by JS to match the preset select above it.
 }
 
 // Discord voice panel
