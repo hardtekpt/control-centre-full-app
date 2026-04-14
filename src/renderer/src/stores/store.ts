@@ -3,6 +3,7 @@ import { CHANNELS, type AppState, type PresetMap, type RunningAppInfo, type UiSe
 import {
   IPC_INVOKE,
   type DdcMonitorPayload,
+  type DiscordVoiceStatePayload,
   type MixerDataPayload,
   type OledServiceFramePayload,
   type ServiceStatusPayload,
@@ -54,6 +55,14 @@ export function useBridgeState() {
     notifications: { state: "starting", detail: "Initializing..." },
     automaticPresetSwitcher: { state: "starting", detail: "Initializing..." },
     shortcuts: { state: "starting", detail: "Initializing..." },
+    discordRpc: { state: "stopped", detail: "Not started.", channelName: null },
+  });
+  const [discordVoiceState, setDiscordVoiceState] = useState<DiscordVoiceStatePayload>({
+    rpcState: "stopped",
+    detail: "Not started.",
+    channelId: null,
+    channelName: null,
+    users: [],
   });
   // Short per-channel write lock so backend echoes do not immediately overwrite
   // optimistic UI edits while Sonar applies the change.
@@ -103,6 +112,9 @@ export function useBridgeState() {
       setFlyoutPinned(Boolean(payload.flyoutPinned));
       if (payload.serviceStatus) {
         setServiceStatus(payload.serviceStatus);
+      }
+      if (payload.discordVoiceState) {
+        setDiscordVoiceState(payload.discordVoiceState);
       }
       setReady(true);
       if (windowMode === "dashboard") {
@@ -155,6 +167,8 @@ export function useBridgeState() {
     const offOledFrame = window.arctisBridge.onOledServiceFrame((frame) => {
       setOledServiceFrame(frame);
     });
+    const offDiscordVoice = window.arctisBridge.onDiscordVoiceUpdate((p) => setDiscordVoiceState(p));
+    const offDiscordState = window.arctisBridge.onDiscordStateUpdate((p) => setDiscordVoiceState(p));
     // When the window is shown again after being hidden, refresh mixer data in the
     // background so the UI does not wait for data before becoming visible.
     const handleVisibilityChange = () => {
@@ -176,6 +190,8 @@ export function useBridgeState() {
       offOpenApps();
       offDdc();
       offOledFrame();
+      offDiscordVoice();
+      offDiscordState();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [windowMode]);
@@ -346,6 +362,20 @@ export function useBridgeState() {
         setDdcError(result.error ?? "Unable to set monitor input source.");
       },
       persistSettings,
+      setDiscordUserVolume: async (userId: string, volume: number) => {
+        setDiscordVoiceState((prev) => ({
+          ...prev,
+          users: prev.users.map((u) => (u.userId === userId ? { ...u, volume } : u)),
+        }));
+        await window.arctisBridge.setDiscordUserVolume(userId, volume);
+      },
+      setDiscordUserMute: async (userId: string, muted: boolean) => {
+        setDiscordVoiceState((prev) => ({
+          ...prev,
+          users: prev.users.map((u) => (u.userId === userId ? { ...u, muted } : u)),
+        }));
+        await window.arctisBridge.setDiscordUserMute(userId, muted);
+      },
     }),
     [invokeDdcMonitors, settings],
   );
@@ -366,6 +396,7 @@ export function useBridgeState() {
     flyoutPinned,
     openApps,
     serviceStatus,
+    discordVoiceState,
     actions,
     theme,
   };

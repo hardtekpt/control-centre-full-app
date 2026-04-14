@@ -5,6 +5,7 @@ import AboutSettingsTab from "../components/settings/AboutSettingsTab";
 import AppSettingsTab from "../components/settings/AppSettingsTab";
 import AutomaticPresetsSettingsTab, { type NewPresetRuleDraft } from "../components/settings/AutomaticPresetsSettingsTab";
 import DdcSettingsTab from "../components/settings/DdcSettingsTab";
+import DiscordSettingsTab from "../components/settings/DiscordSettingsTab";
 import GgSonarSettingsTab from "../components/settings/GgSonarSettingsTab";
 import NotificationSettingsTab from "../components/settings/NotificationSettingsTab";
 import OledServiceSettingsTab from "../components/settings/OledServiceSettingsTab";
@@ -602,6 +603,10 @@ export default function SettingsPage({
             resolveInputName={resolveInputName}
             setInputName={setInputName}
           />
+        )}
+
+        {tab === "discord" && (
+          <DiscordSettingsTab settings={settings} serviceStatus={serviceStatus} onUpdate={onUpdate} />
         )}
 
         {tab === "about" && (

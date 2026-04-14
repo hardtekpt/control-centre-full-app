@@ -4,6 +4,7 @@ import type {
   BooleanOkResponse,
   DdcGetMonitorsResponse,
   DdcMutateMonitorResponse,
+  DiscordVoiceStatePayload,
   ExportSettingsResponse,
   FlyoutPinnedResponse,
   ImportSettingsResponse,
@@ -36,6 +37,11 @@ export interface RegisterCoreIpcHandlersDeps {
   setDdcInputSource: (payload: { monitorId: number; value: string }) => Promise<DdcMutateMonitorResponse>;
   exportSettings: () => Promise<ExportSettingsResponse>;
   importSettings: () => Promise<ImportSettingsResponse>;
+  discordConnect: () => Promise<BooleanOkResponse>;
+  discordDisconnect: () => Promise<BooleanOkResponse>;
+  getDiscordVoiceUsers: () => DiscordVoiceStatePayload;
+  setDiscordUserVolume: (payload: { userId: string; volume: number }) => Promise<BooleanOkResponse>;
+  setDiscordUserMute: (payload: { userId: string; muted: boolean }) => Promise<BooleanOkResponse>;
 }
 
 /**
@@ -65,6 +71,11 @@ export function registerCoreIpcHandlers(deps: RegisterCoreIpcHandlersDeps): void
     setDdcInputSource,
     exportSettings,
     importSettings,
+    discordConnect,
+    discordDisconnect,
+    getDiscordVoiceUsers,
+    setDiscordUserVolume,
+    setDiscordUserMute,
   } = deps;
 
   ipcMain.handle(IPC_INVOKE.APP_GET_INITIAL, getInitialPayload);
@@ -92,4 +103,10 @@ export function registerCoreIpcHandlers(deps: RegisterCoreIpcHandlersDeps): void
 
   ipcMain.handle(IPC_INVOKE.SETTINGS_EXPORT, exportSettings);
   ipcMain.handle(IPC_INVOKE.SETTINGS_IMPORT, importSettings);
+
+  ipcMain.handle(IPC_INVOKE.DISCORD_CONNECT, discordConnect);
+  ipcMain.handle(IPC_INVOKE.DISCORD_DISCONNECT, discordDisconnect);
+  ipcMain.handle(IPC_INVOKE.DISCORD_GET_VOICE_USERS, () => getDiscordVoiceUsers());
+  ipcMain.handle(IPC_INVOKE.DISCORD_SET_USER_VOLUME, (_event, payload: { userId: string; volume: number }) => setDiscordUserVolume(payload));
+  ipcMain.handle(IPC_INVOKE.DISCORD_SET_USER_MUTE, (_event, payload: { userId: string; muted: boolean }) => setDiscordUserMute(payload));
 }

@@ -29,6 +29,7 @@ import {
 import {
   IPC_EVENT,
   type DdcMonitorPayload,
+  type DiscordVoiceStatePayload,
   type ExportSettingsResponse,
   type ImportSettingsResponse,
   type ServiceStatusPayload,
@@ -40,6 +41,7 @@ import * as ddcHandlersModule from "./ipc/ddcHandlers";
 import type { CreateDdcIpcHandlersDeps, DdcIpcHandlers } from "./ipc/ddcHandlers";
 import { createAppIpcHandlers } from "./ipc/appHandlers";
 import { createWindowIpcHandlers } from "./ipc/windowHandlers";
+import { DiscordRpcService } from "./services/discord/service";
 
 let mainWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
@@ -100,6 +102,7 @@ let cachedState: AppState = mergeState();
 let cachedPresets: PresetMap = {};
 let backend: ArctisApiService | null = null;
 let ddcService: DdcApiService | null = null;
+const discordRpcService = new DiscordRpcService();
 const shortcutService = new ShortcutService();
 const presetSwitcherService = new (PresetSwitcherServiceImpl as PresetSwitcherServiceCtor)({
   getCurrentPreset: (channel) => {
@@ -159,6 +162,33 @@ baseStationOledService.on("frame", (frame: { line1: string; line2: string; gener
 });
 baseStationOledService.on("error", (text: string) => {
   pushServiceLog("oledDisplay", `ERROR: ${text}`);
+});
+
+discordRpcService.on("status", (text: string) => {
+  pushServiceLog("discordRpc", text);
+});
+discordRpcService.on("error", (text: string) => {
+  pushServiceLog("discordRpc", `ERROR: ${text}`);
+});
+discordRpcService.on("state-change", () => {
+  const payload = buildDiscordVoiceStatePayload();
+  for (const win of allWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send(IPC_EVENT.DISCORD_STATE_UPDATE, payload);
+    }
+  }
+});
+discordRpcService.on("voice-update", () => {
+  const payload = buildDiscordVoiceStatePayload();
+  for (const win of allWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send(IPC_EVENT.DISCORD_VOICE_UPDATE, payload);
+    }
+  }
+});
+discordRpcService.on("token-refreshed", (token: string) => {
+  settings = { ...settings, discord: { ...settings.discord, accessToken: token } };
+  schedulePersist();
 });
 
 let lastStatusText = "ready";
@@ -254,7 +284,8 @@ type RuntimeServiceKey =
   | "oledDisplay"
   | "notifications"
   | "presetSwitcher"
-  | "shortcuts";
+  | "shortcuts"
+  | "discordRpc";
 
 const SERVICE_LOG_LABELS: Record<RuntimeServiceKey, string> = {
   sonarApi: "Sonar GG",
@@ -264,6 +295,7 @@ const SERVICE_LOG_LABELS: Record<RuntimeServiceKey, string> = {
   notifications: "Notifications",
   presetSwitcher: "Auto Preset Switcher",
   shortcuts: "Shortcuts",
+  discordRpc: "Discord RPC",
 };
 
 /**
@@ -528,7 +560,29 @@ function getServiceStatusPayload(): ServiceStatusPayload {
       state: shortcutsState,
       detail: shortcutsDetail,
     },
+    discordRpc: buildDiscordRpcStatus(),
   };
+}
+
+function buildDiscordRpcStatus(): ServiceStatusPayload["discordRpc"] {
+  const status = discordRpcService.getRuntimeStatus();
+  const lifecycleState: ServiceStatusPayload["discordRpc"]["state"] =
+    status.state === "connected"
+      ? "running"
+      : status.state === "stopped"
+        ? "stopped"
+        : status.state === "starting" || status.state === "reconnecting"
+          ? "starting"
+          : "error";
+  return {
+    state: lifecycleState,
+    detail: status.detail,
+    channelName: status.channelName,
+  };
+}
+
+function buildDiscordVoiceStatePayload(): DiscordVoiceStatePayload {
+  return discordRpcService.buildStatePayload();
 }
 
 function ddcBaseUrl(): string {
@@ -3821,6 +3875,12 @@ function applyRuntimeServiceSettings(previousSettings: UiSettings | null = null)
     shortcutService.unregisterAll();
   }
 
+  discordRpcService.configureRuntime({
+    enabled: settings.services.discordEnabled === true,
+    clientId: settings.discord.clientId,
+    accessToken: settings.discord.accessToken,
+  });
+
   if (!isServiceEnabled("notificationsEnabled")) {
     notificationWindowService.closeAll();
     closeWindowIfOpen(headsetVolumeNotificationWindow);
@@ -4513,6 +4573,7 @@ function wireIpc(): void {
       baseStationOledFrame: baseStationOledService.getLastFrame(),
       flyoutPinned,
       serviceStatus: getServiceStatusPayload(),
+      discordVoiceState: buildDiscordVoiceStatePayload(),
     }),
     setFlyoutPinned: (pinned: boolean) => {
       flyoutPinned = Boolean(pinned);
@@ -4539,6 +4600,23 @@ function wireIpc(): void {
     setDdcInputSource: ddcHandlers.setDdcInputSource,
     exportSettings,
     importSettings: importSettingsFromFile,
+    discordConnect: async () => {
+      await discordRpcService.connect();
+      return { ok: true };
+    },
+    discordDisconnect: async () => {
+      await discordRpcService.disconnect();
+      return { ok: true };
+    },
+    getDiscordVoiceUsers: () => buildDiscordVoiceStatePayload(),
+    setDiscordUserVolume: async (payload: { userId: string; volume: number }) => {
+      await discordRpcService.setUserVolume(payload.userId, payload.volume);
+      return { ok: true };
+    },
+    setDiscordUserMute: async (payload: { userId: string; muted: boolean }) => {
+      await discordRpcService.setUserMute(payload.userId, payload.muted);
+      return { ok: true };
+    },
   });
 }
 
@@ -4829,6 +4907,7 @@ app.on("before-quit", () => {
   shortcutService.unregisterAll();
   void stopManagedDdcApi();
   backend?.stop();
+  discordRpcService.stop();
 });
 
 

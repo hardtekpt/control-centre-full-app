@@ -69,6 +69,11 @@ export interface UiSettings {
     automaticPresetSwitcherEnabled: boolean;
     shortcutsEnabled: boolean;
     sonarPollIntervalMs: number;
+    discordEnabled: boolean;
+  };
+  discord: {
+    clientId: string;
+    accessToken: string;
   };
   baseStationOled: {
     refreshIntervalMs: number;

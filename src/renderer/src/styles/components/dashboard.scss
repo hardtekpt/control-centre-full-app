@@ -84,3 +84,28 @@
   max-height: 2.6em;
   overflow: hidden;
 }
+
+// Discord voice panel
+.discord-voice-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0;
+}
+
+.discord-channel-header {
+  font-size: 0.82em;
+  opacity: 0.65;
+  padding: 0 4px 4px;
+}
+
+.discord-user-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.discord-user-row.is-speaking {
+  border-left: 3px solid var(--system-accent-color);
+  background: color-mix(in srgb, var(--system-accent-color) 8%, transparent);
+}

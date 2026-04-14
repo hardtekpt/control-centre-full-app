@@ -1,4 +1,4 @@
-export type SettingsTab = "app" | "ggSonar" | "oledService" | "shortcuts" | "notifications" | "ddc" | "autoPreset" | "about";
+export type SettingsTab = "app" | "ggSonar" | "oledService" | "shortcuts" | "notifications" | "ddc" | "autoPreset" | "discord" | "about";
 
 export const SETTINGS_TABS: Array<{ key: SettingsTab; label: string }> = [
   { key: "app", label: "App" },
@@ -8,5 +8,6 @@ export const SETTINGS_TABS: Array<{ key: SettingsTab; label: string }> = [
   { key: "autoPreset", label: "Automatic Presets" },
   { key: "notifications", label: "Notifications" },
   { key: "ddc", label: "DDC" },
+  { key: "discord", label: "Discord" },
   { key: "about", label: "About" },
 ];
