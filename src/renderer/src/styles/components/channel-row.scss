@@ -25,6 +25,20 @@
   opacity: 0.9;
 }
 
+.apps-inner {
+  display: inline-block;
+  white-space: nowrap;
+
+  &.is-scrolling {
+    animation: apps-marquee linear infinite;
+  }
+}
+
+@keyframes apps-marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
 .mute-toggle {
   width: 2.2em;
   height: 2.2em;
