@@ -25,6 +25,7 @@ export default function ChannelRow(props: ChannelRowProps) {
   const lastPreviewVolume = useRef<number | null>(null);
   const selectRef = useRef<HTMLSelectElement | null>(null);
   const appsRef = useRef<HTMLDivElement | null>(null);
+  const appsActiveRef = useRef(false);
   const [appsMarquee, setAppsMarquee] = useState<{ active: boolean; duration: number }>({ active: false, duration: 8 });
   const pendingWheelVolume = useRef<number>(props.volume);
   useEffect(() => setDraftVolume(props.volume), [props.volume]);
@@ -55,24 +56,24 @@ export default function ChannelRow(props: ChannelRowProps) {
 
     // Apply select width to the apps container so both stay visually aligned.
     if (selectEl) {
-      const w = selectEl.offsetWidth;
-      container.style.width = `${w}px`;
+      container.style.width = `${selectEl.offsetWidth}px`;
     }
 
-    const rafId = requestAnimationFrame(() => {
-      const inner = container.firstElementChild as HTMLElement | null;
-      if (!inner) return;
-      // Inner contains duplicated text (text + separator + text) so one copy = half scrollWidth.
-      const singleWidth = inner.scrollWidth / 2;
-      const containerWidth = container.clientWidth;
-      const overflows = singleWidth > containerWidth + 1;
-      setAppsMarquee({
-        active: overflows,
-        // Constant px/s speed so longer text doesn't feel slower.
-        duration: overflows ? Math.max(3, singleWidth / 38) : 8,
-      });
+    const inner = container.firstElementChild as HTMLElement | null;
+    if (!inner) return;
+
+    // When appText changes the span re-renders with single text (active drives
+    // duplication, but React batches: layout effect fires after the render that
+    // corresponds to the new appText, so active still equals the *previous* state).
+    // Use the ref to know whether the DOM currently holds duplicated text.
+    const singleWidth = appsActiveRef.current ? inner.scrollWidth / 2 : inner.scrollWidth;
+    const overflows = singleWidth > container.clientWidth + 1;
+    appsActiveRef.current = overflows;
+    setAppsMarquee({
+      active: overflows,
+      // Constant px/s speed so short and long text scroll at the same pace.
+      duration: overflows ? Math.max(3, singleWidth / 38) : 8,
     });
-    return () => cancelAnimationFrame(rafId);
   }, [appText]);
   const verticalProgressStyle = useMemo(
     () => ({ height: `${Math.max(0, Math.min(100, draftVolume))}%` }),
