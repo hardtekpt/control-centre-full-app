@@ -65,6 +65,7 @@ export interface UiSettings {
     hidEventsEnabled: boolean;
     ddcEnabled: boolean;
     oledDisplayEnabled: boolean;
+    oledNotificationsEnabled: boolean;
     notificationsEnabled: boolean;
     automaticPresetSwitcherEnabled: boolean;
     shortcutsEnabled: boolean;

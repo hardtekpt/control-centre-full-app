@@ -19,13 +19,15 @@ interface ServiceEntry {
 }
 
 const SERVICE_LIST: ServiceEntry[] = [
-  { label: "Sonar GG API",    settingKey: "sonarApiEnabled",                  statusKey: "sonarApi" },
-  { label: "HID Events",      settingKey: "hidEventsEnabled",                 statusKey: "hidEvents" },
-  { label: "DDC",             settingKey: "ddcEnabled",                       statusKey: "ddcApi" },
-  { label: "Base Station OLED", settingKey: "oledDisplayEnabled",             statusKey: "baseStationOled" },
-  { label: "Notifications",   settingKey: "notificationsEnabled",             statusKey: "notifications" },
-  { label: "Preset Switcher", settingKey: "automaticPresetSwitcherEnabled",   statusKey: "automaticPresetSwitcher" },
-  { label: "Shortcuts",       settingKey: "shortcutsEnabled",                 statusKey: "shortcuts" },
+  { label: "Sonar GG API",      settingKey: "sonarApiEnabled",                  statusKey: "sonarApi" },
+  { label: "HID Events",        settingKey: "hidEventsEnabled",                 statusKey: "hidEvents" },
+  { label: "DDC",               settingKey: "ddcEnabled",                       statusKey: "ddcApi" },
+  { label: "OLED Display",      settingKey: "oledDisplayEnabled",               statusKey: "baseStationOled" },
+  { label: "OLED Notifications",settingKey: "oledNotificationsEnabled",         statusKey: "oledNotifications" },
+  { label: "Notifications",     settingKey: "notificationsEnabled",             statusKey: "notifications" },
+  { label: "Preset Switcher",   settingKey: "automaticPresetSwitcherEnabled",   statusKey: "automaticPresetSwitcher" },
+  { label: "Shortcuts",         settingKey: "shortcutsEnabled",                 statusKey: "shortcuts" },
+  { label: "Discord RPC",       settingKey: "discordEnabled",                   statusKey: "discordRpc" },
 ];
 
 /**
@@ -54,6 +56,7 @@ export default function AppSettingsTab({
 
   const isEnabled = (key: keyof UiSettings["services"]): boolean => {
     if (key === "oledDisplayEnabled") return serviceSettings.oledDisplayEnabled === true;
+    if (key === "discordEnabled") return serviceSettings.discordEnabled === true;
     return (serviceSettings[key] as boolean | undefined) !== false;
   };
 

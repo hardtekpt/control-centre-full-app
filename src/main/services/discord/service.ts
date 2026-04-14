@@ -141,9 +141,10 @@ export class DiscordRpcService extends EventEmitter {
         }
       });
 
-      const loginOpts: { clientId: string; scopes: string[]; accessToken?: string } = {
+      const loginOpts: { clientId: string; scopes: string[]; redirectUri: string; accessToken?: string } = {
         clientId: this.clientId,
         scopes: SCOPES,
+        redirectUri: "http://127.0.0.1",
       };
       if (this.savedAccessToken) {
         loginOpts.accessToken = this.savedAccessToken;
