@@ -62,6 +62,11 @@ export const DEFAULT_SETTINGS: UiSettings = {
     automaticPresetSwitcherEnabled: true,
     shortcutsEnabled: true,
     sonarPollIntervalMs: 2000,
+    discordEnabled: false,
+  },
+  discord: {
+    clientId: "",
+    accessToken: "",
   },
   baseStationOled: {
     refreshIntervalMs: 15_000,
@@ -184,6 +189,13 @@ export function mergeSettings(partial?: Partial<UiSettings>): UiSettings {
       automaticPresetSwitcherEnabled: partialSanitized.services?.automaticPresetSwitcherEnabled !== false,
       shortcutsEnabled: partialSanitized.services?.shortcutsEnabled !== false,
       sonarPollIntervalMs: clamp(sonarPollIntervalMs, 500, 60_000),
+      discordEnabled: partialSanitized.services?.discordEnabled === true,
+    },
+    discord: {
+      ...DEFAULT_SETTINGS.discord,
+      ...(partialSanitized.discord ?? {}),
+      clientId: String(partialSanitized.discord?.clientId ?? "").trim().slice(0, 64),
+      accessToken: String(partialSanitized.discord?.accessToken ?? "").trim().slice(0, 512),
     },
     baseStationOled: {
       ...DEFAULT_SETTINGS.baseStationOled,

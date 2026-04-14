@@ -3,8 +3,10 @@ import { CHANNELS, type AppState, type ChannelKey, type PresetMap, type UiSettin
 import ChannelRow from "../components/ChannelRow";
 import StatusCard from "../components/StatusCard";
 import AppMixerRow from "../components/AppMixerRow";
+import DiscordVoicePanel from "../components/DiscordVoicePanel";
 import type { DdcMonitor, MixerData } from "../stores/store";
 import MonitorControlsCard from "../components/MonitorControlsCard";
+import type { DiscordVoiceStatePayload } from "@shared/ipc";
 
 interface DashboardPageProps {
   state: AppState;
@@ -24,15 +26,20 @@ interface DashboardPageProps {
   onSetMixerAppMute: (appId: string, muted: boolean) => void;
   onSetDdcBrightness: (monitorId: number, value: number) => void;
   onSetDdcInputSource: (monitorId: number, value: string) => void;
+  discordEnabled: boolean;
+  discordVoiceState: DiscordVoiceStatePayload;
+  onSetDiscordUserVolume: (userId: string, volume: number) => void;
+  onSetDiscordUserMute: (userId: string, muted: boolean) => void;
 }
 
 /**
  * Main dashboard layout: status cards, Sonar channels, and optional Windows mixer.
  */
 export default function DashboardPage(props: DashboardPageProps) {
-  const [tab, setTab] = useState<"sonar" | "windows">("sonar");
+  const [tab, setTab] = useState<"sonar" | "windows" | "discord">("sonar");
   const visible = CHANNELS.filter((channel) => props.visibleChannels.includes(channel));
   const windowsMixerEnabled = props.windowsMixerEnabled !== false;
+  const discordEnabled = props.discordEnabled === true;
 
   /**
    * Refreshes mixer data only when the user enters the Windows mixer tab.
@@ -51,6 +58,12 @@ export default function DashboardPage(props: DashboardPageProps) {
       setTab("sonar");
     }
   }, [tab, windowsMixerEnabled]);
+
+  useEffect(() => {
+    if (!discordEnabled && tab === "discord") {
+      setTab("sonar");
+    }
+  }, [tab, discordEnabled]);
 
   return (
     <div className="dashboard-page">
@@ -74,6 +87,11 @@ export default function DashboardPage(props: DashboardPageProps) {
                 Windows Mixer
               </button>
             )}
+            {discordEnabled && (
+              <button className={`tab-btn ${tab === "discord" ? "active" : ""}`} onClick={() => setTab("discord")}>
+                Discord
+              </button>
+            )}
           </div>
         </div>
         {tab === "sonar" && (
@@ -94,6 +112,13 @@ export default function DashboardPage(props: DashboardPageProps) {
               />
             ))}
           </div>
+        )}
+        {discordEnabled && tab === "discord" && (
+          <DiscordVoicePanel
+            voiceState={props.discordVoiceState}
+            onSetUserVolume={props.onSetDiscordUserVolume}
+            onSetUserMute={props.onSetDiscordUserMute}
+          />
         )}
         {windowsMixerEnabled && tab === "windows" && (
           <div className="windows-mixer">

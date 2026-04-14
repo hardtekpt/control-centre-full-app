@@ -131,6 +131,7 @@ export default function LiveApp({ windowMode }: LiveAppProps) {
     oledServiceFrame,
     flyoutPinned,
     serviceStatus,
+    discordVoiceState,
     actions,
   } = useBridgeState();
   const resolvedSettings = settings ?? DEFAULT_SETTINGS;
@@ -270,6 +271,10 @@ export default function LiveApp({ windowMode }: LiveAppProps) {
         onSetMixerAppMute={(appId, muted) => void actions.setMixerAppMute(appId, muted)}
         onSetDdcBrightness={(monitorId, value) => void actions.setDdcBrightness(monitorId, value)}
         onSetDdcInputSource={(monitorId, value) => void actions.setDdcInputSource(monitorId, value)}
+        discordEnabled={resolvedSettings.services.discordEnabled === true}
+        discordVoiceState={discordVoiceState}
+        onSetDiscordUserVolume={(userId, volume) => void actions.setDiscordUserVolume(userId, volume)}
+        onSetDiscordUserMute={(userId, muted) => void actions.setDiscordUserMute(userId, muted)}
       />
     </main>
   );

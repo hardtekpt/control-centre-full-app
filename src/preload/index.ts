@@ -26,6 +26,11 @@ const IPC_INVOKE = {
   SETTINGS_SET: "settings:set",
   SETTINGS_EXPORT: "settings:export",
   SETTINGS_IMPORT: "settings:import",
+  DISCORD_CONNECT: "discord:connect",
+  DISCORD_DISCONNECT: "discord:disconnect",
+  DISCORD_GET_VOICE_USERS: "discord:get-voice-users",
+  DISCORD_SET_USER_VOLUME: "discord:set-user-volume",
+  DISCORD_SET_USER_MUTE: "discord:set-user-mute",
 } as const;
 
 const IPC_SEND = {
@@ -47,6 +52,8 @@ const IPC_EVENT = {
   DDC_UPDATE: "ddc:update",
   OPEN_APPS_UPDATE: "open-apps:update",
   OLED_SERVICE_FRAME: "oled-service:frame",
+  DISCORD_VOICE_UPDATE: "discord:voice-update",
+  DISCORD_STATE_UPDATE: "discord:state-update",
 } as const;
 
 function invoke<C extends InvokeChannel>(channel: C, ...params: InvokeArgs<C>): Promise<InvokeResult<C>> {
@@ -91,6 +98,13 @@ const api: ArctisBridgeApi = {
   onDdcUpdate: (cb) => subscribe(IPC_EVENT.DDC_UPDATE, cb),
   onOpenApps: (cb) => subscribe(IPC_EVENT.OPEN_APPS_UPDATE, cb),
   onOledServiceFrame: (cb) => subscribe(IPC_EVENT.OLED_SERVICE_FRAME, cb),
+  discordConnect: () => invoke(IPC_INVOKE.DISCORD_CONNECT),
+  discordDisconnect: () => invoke(IPC_INVOKE.DISCORD_DISCONNECT),
+  getDiscordVoiceUsers: () => invoke(IPC_INVOKE.DISCORD_GET_VOICE_USERS),
+  setDiscordUserVolume: (userId, volume) => invoke(IPC_INVOKE.DISCORD_SET_USER_VOLUME, { userId, volume }),
+  setDiscordUserMute: (userId, muted) => invoke(IPC_INVOKE.DISCORD_SET_USER_MUTE, { userId, muted }),
+  onDiscordVoiceUpdate: (cb) => subscribe(IPC_EVENT.DISCORD_VOICE_UPDATE, cb),
+  onDiscordStateUpdate: (cb) => subscribe(IPC_EVENT.DISCORD_STATE_UPDATE, cb),
 };
 
 contextBridge.exposeInMainWorld("arctisBridge", api);

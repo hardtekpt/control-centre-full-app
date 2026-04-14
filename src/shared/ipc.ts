@@ -16,6 +16,11 @@ export const IPC_INVOKE = {
   SETTINGS_SET: "settings:set",
   SETTINGS_EXPORT: "settings:export",
   SETTINGS_IMPORT: "settings:import",
+  DISCORD_CONNECT: "discord:connect",
+  DISCORD_DISCONNECT: "discord:disconnect",
+  DISCORD_GET_VOICE_USERS: "discord:get-voice-users",
+  DISCORD_SET_USER_VOLUME: "discord:set-user-volume",
+  DISCORD_SET_USER_MUTE: "discord:set-user-mute",
 } as const;
 
 export const IPC_SEND = {
@@ -37,6 +42,8 @@ export const IPC_EVENT = {
   DDC_UPDATE: "ddc:update",
   OPEN_APPS_UPDATE: "open-apps:update",
   OLED_SERVICE_FRAME: "oled-service:frame",
+  DISCORD_VOICE_UPDATE: "discord:voice-update",
+  DISCORD_STATE_UPDATE: "discord:state-update",
 } as const;
 
 export type ServiceLifecycleState = "starting" | "running" | "error" | "stopped";
@@ -80,6 +87,29 @@ export interface ServiceStatusPayload {
     state: ServiceLifecycleState;
     detail: string;
   };
+  discordRpc: {
+    state: ServiceLifecycleState;
+    detail: string;
+    channelName: string | null;
+  };
+}
+
+export interface DiscordVoiceUserPayload {
+  userId: string;
+  username: string;
+  volume: number;
+  muted: boolean;
+  selfMuted: boolean;
+  selfDeafened: boolean;
+  speaking: boolean;
+}
+
+export interface DiscordVoiceStatePayload {
+  rpcState: "starting" | "connected" | "disconnected" | "reconnecting" | "stopped";
+  detail: string;
+  channelId: string | null;
+  channelName: string | null;
+  users: DiscordVoiceUserPayload[];
 }
 
 export interface MixerOutputPayload {
@@ -172,6 +202,7 @@ export interface InitialPayload {
   baseStationOledFrame: OledServiceFramePayload | null;
   flyoutPinned: boolean;
   serviceStatus: ServiceStatusPayload;
+  discordVoiceState: DiscordVoiceStatePayload;
 }
 
 export interface IpcInvokeMap {
@@ -190,6 +221,11 @@ export interface IpcInvokeMap {
   [IPC_INVOKE.SETTINGS_SET]: { params: [settings: Partial<UiSettings>]; result: UiSettings };
   [IPC_INVOKE.SETTINGS_EXPORT]: { params: []; result: ExportSettingsResponse };
   [IPC_INVOKE.SETTINGS_IMPORT]: { params: []; result: ImportSettingsResponse };
+  [IPC_INVOKE.DISCORD_CONNECT]: { params: []; result: BooleanOkResponse };
+  [IPC_INVOKE.DISCORD_DISCONNECT]: { params: []; result: BooleanOkResponse };
+  [IPC_INVOKE.DISCORD_GET_VOICE_USERS]: { params: []; result: DiscordVoiceStatePayload };
+  [IPC_INVOKE.DISCORD_SET_USER_VOLUME]: { params: [{ userId: string; volume: number }]; result: BooleanOkResponse };
+  [IPC_INVOKE.DISCORD_SET_USER_MUTE]: { params: [{ userId: string; muted: boolean }]; result: BooleanOkResponse };
 }
 
 export type InvokeChannel = keyof IpcInvokeMap;
@@ -207,6 +243,8 @@ export interface IpcEventPayloadMap {
   [IPC_EVENT.DDC_UPDATE]: DdcMonitorPayload[];
   [IPC_EVENT.OPEN_APPS_UPDATE]: RunningAppInfo[];
   [IPC_EVENT.OLED_SERVICE_FRAME]: OledServiceFramePayload;
+  [IPC_EVENT.DISCORD_VOICE_UPDATE]: DiscordVoiceStatePayload;
+  [IPC_EVENT.DISCORD_STATE_UPDATE]: DiscordVoiceStatePayload;
 }
 
 export type EventChannel = keyof IpcEventPayloadMap;
@@ -245,4 +283,11 @@ export interface ArctisBridgeApi {
   onOpenApps(cb: (apps: RunningAppInfo[]) => void): () => void;
   onDdcUpdate(cb: (monitors: DdcMonitorPayload[]) => void): () => void;
   onOledServiceFrame(cb: (frame: OledServiceFramePayload) => void): () => void;
+  discordConnect(): Promise<BooleanOkResponse>;
+  discordDisconnect(): Promise<BooleanOkResponse>;
+  getDiscordVoiceUsers(): Promise<DiscordVoiceStatePayload>;
+  setDiscordUserVolume(userId: string, volume: number): Promise<BooleanOkResponse>;
+  setDiscordUserMute(userId: string, muted: boolean): Promise<BooleanOkResponse>;
+  onDiscordVoiceUpdate(cb: (p: DiscordVoiceStatePayload) => void): () => void;
+  onDiscordStateUpdate(cb: (p: DiscordVoiceStatePayload) => void): () => void;
 }
