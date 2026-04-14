@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DdcMonitor } from "../../stores/store";
 import BrightnessIcon from "../icons/BrightnessIcon";
 import { resolveInputName, sameInputSource } from "./monitorHelpers";
@@ -9,12 +9,18 @@ interface MonitorInlineControlProps {
   configuredInputA: string;
   configuredInputB: string;
   inputNameMap: Record<string, string>;
-  onSetBrightness: (monitorId: number, value: number) => void;
+  onSetBrightness: (monitorId: number, value: number) => Promise<void>;
   onSetInputSource: (monitorId: number, value: string) => void;
 }
 
 /**
  * Interactive brightness and input-toggle controls for a single monitor.
+ *
+ * Brightness UI is decoupled from the DDC write lifecycle:
+ *  - Dragging: slider turns dimmer immediately so the user knows a write is pending.
+ *  - Write in-flight: colour stays dim until the command returns.
+ *  - After write: draft is re-synced to the confirmed hardware value and colour restores.
+ *  - Background polls never overwrite the draft while dragging or writing.
  */
 export default function MonitorInlineControl({
   monitor,
@@ -27,9 +33,43 @@ export default function MonitorInlineControl({
 }: MonitorInlineControlProps) {
   const [draftBrightness, setDraftBrightness] = useState(monitor.brightness ?? 50);
   const [pendingInputSource, setPendingInputSource] = useState<string | null>(null);
+  /** True while the user is dragging the slider OR while a DDC write is in-flight. */
+  const [isActive, setIsActive] = useState(false);
 
+  /**
+   * Refs used inside async callbacks so closures always see the latest values
+   * without creating extra effect dependencies.
+   */
+  const isDraggingRef = useRef(false);
+  const isWritingRef = useRef(false);
+  /** Always tracks the latest draft so onMouseUp captures the correct value. */
+  const draftBrightnessRef = useRef(monitor.brightness ?? 50);
+  /** Kept in sync with the monitor prop for use inside async write callbacks. */
+  const latestMonitorBrightness = useRef(monitor.brightness ?? 50);
+
+  /** Keep latestMonitorBrightness current so async callbacks can read confirmed values. */
   useEffect(() => {
-    setDraftBrightness(monitor.brightness ?? 50);
+    latestMonitorBrightness.current = monitor.brightness ?? 50;
+  }, [monitor.brightness]);
+
+  /** Reset all transient state when the user switches to a different monitor. */
+  useEffect(() => {
+    isDraggingRef.current = false;
+    isWritingRef.current = false;
+    setIsActive(false);
+  }, [monitor.monitor_id]);
+
+  /**
+   * Sync the draft from props only when the slider is completely idle.
+   * This prevents background polls from jumping the slider mid-drag or
+   * mid-write.
+   */
+  useEffect(() => {
+    if (!isDraggingRef.current && !isWritingRef.current) {
+      const b = monitor.brightness ?? 50;
+      draftBrightnessRef.current = b;
+      setDraftBrightness(b);
+    }
   }, [monitor.monitor_id, monitor.brightness]);
 
   useEffect(() => {
@@ -68,12 +108,46 @@ export default function MonitorInlineControl({
     return custom ? `${custom} (${code})` : code;
   };
 
-  const commitBrightness = () => {
-    const next = Math.max(0, Math.min(100, Math.round(draftBrightness)));
-    if (monitor.brightness === next) {
-      return;
+  const onRangeChange = (value: number) => {
+    const next = Math.max(0, Math.min(100, Math.round(value)));
+    draftBrightnessRef.current = next;
+    setDraftBrightness(next);
+  };
+
+  /** Called on pointerdown / keydown — marks the slider as actively being moved. */
+  const onSliderInteractStart = () => {
+    isDraggingRef.current = true;
+    setIsActive(true);
+  };
+
+  /**
+   * Fires the DDC write with the final draft value, then re-syncs to the
+   * confirmed hardware brightness and restores the slider colour.
+   * Safe to call while a previous write is still in-flight: the new value
+   * overwrites the pending one and the previous write's finally-block is a
+   * no-op because `isDraggingRef` will still be false after this call.
+   */
+  const fireWrite = async (value: number) => {
+    const next = Math.max(0, Math.min(100, Math.round(value)));
+    isWritingRef.current = true;
+    try {
+      await onSetBrightness(monitor.monitor_id, next);
+    } finally {
+      isWritingRef.current = false;
+      // Only restore UI if the user hasn't started a new drag
+      if (!isDraggingRef.current) {
+        const confirmed = latestMonitorBrightness.current;
+        draftBrightnessRef.current = confirmed;
+        setDraftBrightness(confirmed);
+        setIsActive(false);
+      }
     }
-    void onSetBrightness(monitor.monitor_id, next);
+  };
+
+  /** Called on mouseup / touchend / keyup — ends drag and commits the value. */
+  const commitBrightness = () => {
+    isDraggingRef.current = false;
+    void fireWrite(draftBrightnessRef.current);
   };
 
   const toggleInput = () => {
@@ -96,7 +170,7 @@ export default function MonitorInlineControl({
       <span className="monitor-inline-icon" title={`Brightness ${monitor.brightness ?? "--"}%`}>
         <BrightnessIcon />
       </span>
-      <div className="horizontal-slider-wrap monitor-slider">
+      <div className={`horizontal-slider-wrap monitor-slider${isActive ? " is-active" : ""}`}>
         <div className="horizontal-track">
           <div className="horizontal-progress" style={{ width: `${Math.max(0, Math.min(100, draftBrightness))}%` }} />
         </div>
@@ -105,7 +179,9 @@ export default function MonitorInlineControl({
           min={0}
           max={100}
           value={Math.max(0, Math.min(100, draftBrightness))}
-          onChange={(event) => setDraftBrightness(Number(event.currentTarget.value))}
+          onChange={(event) => onRangeChange(Number(event.currentTarget.value))}
+          onPointerDown={onSliderInteractStart}
+          onKeyDown={onSliderInteractStart}
           onMouseUp={commitBrightness}
           onTouchEnd={commitBrightness}
           onKeyUp={commitBrightness}
