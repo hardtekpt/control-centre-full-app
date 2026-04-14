@@ -435,6 +435,7 @@ type ToggleServiceSettingKey =
   | "hidEventsEnabled"
   | "ddcEnabled"
   | "oledDisplayEnabled"
+  | "oledNotificationsEnabled"
   | "notificationsEnabled"
   | "automaticPresetSwitcherEnabled"
   | "shortcutsEnabled";
