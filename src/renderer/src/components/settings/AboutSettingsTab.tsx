@@ -59,6 +59,11 @@ export default function AboutSettingsTab({ lastStatus, lastError, serviceStatus,
             detail={serviceStatus.baseStationOled.detail}
           />
           <ServiceRow
+            name="OLED Notifications"
+            state={serviceStatus.oledNotifications.state}
+            detail={serviceStatus.oledNotifications.detail}
+          />
+          <ServiceRow
             name="Notifications"
             state={serviceStatus.notifications.state}
             detail={serviceStatus.notifications.detail}
@@ -72,6 +77,12 @@ export default function AboutSettingsTab({ lastStatus, lastError, serviceStatus,
             name="Shortcuts"
             state={serviceStatus.shortcuts.state}
             detail={serviceStatus.shortcuts.detail}
+          />
+          <ServiceRow
+            name="Discord RPC"
+            state={serviceStatus.discordRpc.state}
+            detail={serviceStatus.discordRpc.detail}
+            meta={serviceStatus.discordRpc.channelName ? `Channel: ${serviceStatus.discordRpc.channelName}` : undefined}
           />
         </div>
         <div className="service-row-backend">

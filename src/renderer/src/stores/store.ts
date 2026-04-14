@@ -52,6 +52,7 @@ export function useBridgeState() {
     hidEvents: { state: "starting", detail: "Initializing..." },
     ddcApi: { state: "starting", detail: "Initializing...", endpoint: "", managed: false, pid: null },
     baseStationOled: { state: "starting", detail: "Initializing..." },
+    oledNotifications: { state: "starting", detail: "Initializing..." },
     notifications: { state: "starting", detail: "Initializing..." },
     automaticPresetSwitcher: { state: "starting", detail: "Initializing..." },
     shortcuts: { state: "starting", detail: "Initializing..." },

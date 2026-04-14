@@ -75,6 +75,10 @@ export interface ServiceStatusPayload {
     state: ServiceLifecycleState;
     detail: string;
   };
+  oledNotifications: {
+    state: ServiceLifecycleState;
+    detail: string;
+  };
   notifications: {
     state: ServiceLifecycleState;
     detail: string;

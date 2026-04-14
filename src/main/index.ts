@@ -10,6 +10,7 @@ import { createPersistenceService, type PersistedAppState } from "./services/per
 import { createNotificationTimerService, type NotificationTimerKey } from "./services/notifications/timerService";
 import { createNotificationWindowService } from "./services/notifications/windowService";
 import { BaseStationOledService } from "./services/oled/service";
+import { OledNotificationService } from "./services/oled/notificationService";
 import {
   PresetSwitcherService as PresetSwitcherServiceImpl,
   PresetSwitcherServiceConfig,
@@ -150,6 +151,10 @@ const presetSwitcherService = new (PresetSwitcherServiceImpl as PresetSwitcherSe
   },
 });
 const baseStationOledService = new BaseStationOledService();
+const oledNotificationService = new OledNotificationService(baseStationOledService);
+oledNotificationService.on("status", (text: string) => {
+  pushServiceLog("oledNotifications", text);
+});
 baseStationOledService.on("status", (text: string) => {
   pushServiceLog("oledDisplay", text);
 });
@@ -283,6 +288,7 @@ type RuntimeServiceKey =
   | "hidEvents"
   | "ddcApi"
   | "oledDisplay"
+  | "oledNotifications"
   | "notifications"
   | "presetSwitcher"
   | "shortcuts"
@@ -293,6 +299,7 @@ const SERVICE_LOG_LABELS: Record<RuntimeServiceKey, string> = {
   hidEvents: "HID Events",
   ddcApi: "DDC",
   oledDisplay: "Base Station OLED",
+  oledNotifications: "OLED Notifications",
   notifications: "Notifications",
   presetSwitcher: "Auto Preset Switcher",
   shortcuts: "Shortcuts",
@@ -549,6 +556,7 @@ function getServiceStatusPayload(): ServiceStatusPayload {
       state: oledState,
       detail: oledDetail,
     },
+    oledNotifications: buildOledNotificationsStatus(),
     notifications: {
       state: notificationsState,
       detail: notificationsDetail,
@@ -562,6 +570,14 @@ function getServiceStatusPayload(): ServiceStatusPayload {
       detail: shortcutsDetail,
     },
     discordRpc: buildDiscordRpcStatus(),
+  };
+}
+
+function buildOledNotificationsStatus(): ServiceStatusPayload["oledNotifications"] {
+  const status = oledNotificationService.getRuntimeStatus();
+  return {
+    state: status.state === "running" ? "running" : "stopped",
+    detail: status.detail,
   };
 }
 
@@ -3627,7 +3643,7 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
     }
     if (isOledNotifEnabled("connectivity")) {
       const connType = next.wireless ? "WIRELESS" : next.bluetooth ? "BLUETOOTH" : "WIRED";
-      baseStationOledService.showTypedNotification(
+      oledNotificationService.showTypedNotification(
         "connectivity",
         next.connected ? "CONNECTED" : "DISCONNECTED",
         connType,
@@ -3641,7 +3657,7 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
     }
     if (isOledNotifEnabled("ancMode")) {
       const modeText = String(next.anc_mode).trim().toUpperCase() || "OFF";
-      baseStationOledService.showTypedNotification("ancMode", "ANC MODE", modeText);
+      oledNotificationService.showTypedNotification("ancMode", "ANC MODE", modeText);
     }
   }
 
@@ -3651,7 +3667,7 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
     }
     if (isOledNotifEnabled("oled")) {
       const brightness = Math.round(next.oled_brightness);
-      baseStationOledService.showTypedNotification("oled", "DISPLAY", `${brightness}%`, brightness);
+      oledNotificationService.showTypedNotification("oled", "DISPLAY", `${brightness}%`, brightness);
     }
   }
 
@@ -3661,7 +3677,7 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
     }
     if (isOledNotifEnabled("sidetone")) {
       const level = Math.round(next.sidetone_level);
-      baseStationOledService.showTypedNotification("sidetone", "SIDETONE", `${level}%`, level);
+      oledNotificationService.showTypedNotification("sidetone", "SIDETONE", `${level}%`, level);
     }
   }
 
@@ -3670,7 +3686,7 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
       void showMicMuteNotification(next.mic_mute);
     }
     if (isOledNotifEnabled("micMute")) {
-      baseStationOledService.showTypedNotification("micMute", "MIC MUTE", next.mic_mute ? "MUTED" : "ACTIVE");
+      oledNotificationService.showTypedNotification("micMute", "MIC MUTE", next.mic_mute ? "MUTED" : "ACTIVE");
     }
   }
 
@@ -3679,7 +3695,7 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
       void showUsbInputNotification(next.current_usb_input);
     }
     if (isOledNotifEnabled("usbInput")) {
-      baseStationOledService.showTypedNotification("usbInput", "USB INPUT", `USB ${next.current_usb_input}`);
+      oledNotificationService.showTypedNotification("usbInput", "USB INPUT", `USB ${next.current_usb_input}`);
     }
   }
 
@@ -3695,10 +3711,10 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
   }
   if (volumeChanged && next.headset_volume_percent != null && isOledNotifEnabled("headsetVolume")) {
     const vol = Math.round(next.headset_volume_percent);
-    baseStationOledService.showTypedNotification("headsetVolume", "HEADSET VOL", `${vol}%`, vol);
+    oledNotificationService.showTypedNotification("headsetVolume", "HEADSET VOL", `${vol}%`, vol);
   } else if (chatMixChanged && chatMixOsdEnabled && next.chat_mix_balance != null && isOledNotifEnabled("headsetChatMix")) {
     const mix = Math.round(next.chat_mix_balance);
-    baseStationOledService.showTypedNotification("headsetChatMix", "CHAT MIX", `${mix}%`, mix);
+    oledNotificationService.showTypedNotification("headsetChatMix", "CHAT MIX", `${mix}%`, mix);
   }
 
   if (isNotifEnabled("battery") || isOledNotifEnabled("battery")) {
@@ -3711,7 +3727,7 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
         void showBatteryLowNotification({ battery: nextHeadset, threshold });
       }
       if (isOledNotifEnabled("battery")) {
-        baseStationOledService.showTypedNotification("battery", "BATTERY LOW", `${nextHeadset}%`, nextHeadset);
+        oledNotificationService.showTypedNotification("battery", "BATTERY LOW", `${nextHeadset}%`, nextHeadset);
       }
     }
     const prevBase = toNullablePercent(previous.base_battery_percent);
@@ -3725,7 +3741,7 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
       }
       if (isOledNotifEnabled("battery")) {
         const baseText = hasBattery ? `${nextBase ?? 0}%` : "REMOVED";
-        baseStationOledService.showTypedNotification(
+        oledNotificationService.showTypedNotification(
           "battery",
           "BASE BATTERY",
           baseText,
@@ -3746,7 +3762,7 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
           void showPresetChangeNotification(channel, presetName);
         }
         if (isOledNotifEnabled("presetChange")) {
-          baseStationOledService.showTypedNotification("presetChange", channel.toUpperCase(), presetName);
+          oledNotificationService.showTypedNotification("presetChange", channel.toUpperCase(), presetName);
         }
       }
     }
@@ -3958,6 +3974,10 @@ function applyRuntimeServiceSettings(previousSettings: UiSettings | null = null)
     shortcutService.unregisterAll();
   }
 
+  oledNotificationService.configureRuntime({
+    enabled: settings.services.oledNotificationsEnabled !== false,
+  });
+
   discordRpcService.configureRuntime({
     enabled: settings.services.discordEnabled === true,
     clientId: settings.discord.clientId,
@@ -3990,6 +4010,7 @@ function applyRuntimeServiceSettings(previousSettings: UiSettings | null = null)
     pushServiceLog("hidEvents", isServiceEnabled("hidEventsEnabled") ? "started." : "stopped.");
     pushServiceLog("ddcApi", isServiceEnabled("ddcEnabled") ? "started." : "stopped.");
     pushServiceLog("oledDisplay", isServiceEnabled("oledDisplayEnabled") ? "started." : "stopped.");
+    pushServiceLog("oledNotifications", isServiceEnabled("oledNotificationsEnabled") ? "started." : "stopped.");
     pushServiceLog("notifications", isServiceEnabled("notificationsEnabled") ? "started." : "stopped.");
     pushServiceLog(
       "presetSwitcher",
@@ -4594,7 +4615,7 @@ function wireIpc(): void {
     openExternal: (url) => shell.openExternal(url, { activate: true }),
     normalizeError: (error) => normalizeError(error),
     showSystemNotification: (title, body) => showSystemNotification(title, body),
-    showCustomNotificationOnOled: (title, body) => baseStationOledService.showCustomNotification(title, body),
+    showCustomNotificationOnOled: (title, body) => oledNotificationService.showCustomNotification(title, body),
   });
 
   const windowHandlers = createWindowIpcHandlers({
@@ -4982,6 +5003,7 @@ app.on("before-quit", () => {
   notificationWindowService.closeAll();
   stopDdcMonitorRefresh();
   presetSwitcherService.stop();
+  oledNotificationService.stop();
   baseStationOledService.stop();
   clearNotificationTimers();
   resetNotificationTransientState();
