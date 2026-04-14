@@ -126,6 +126,9 @@ export class BaseStationOledService extends EventEmitter {
   private timer: NodeJS.Timeout | null = null;
   private pendingRefreshTimer: NodeJS.Timeout | null = null;
   private running = false;
+  /** True while a one-shot notification is being delivered with the display loop stopped. */
+  private oneShotActive = false;
+  private oneShotCleanupTimer: NodeJS.Timeout | null = null;
   private hid: HidModule | null = null;
   private lastFrame: OledServiceFrame | null = null;
   private lastError = "";
@@ -151,6 +154,7 @@ export class BaseStationOledService extends EventEmitter {
       enabled: partial.enabled ?? this.config.enabled,
     };
     if (!this.config.showCustomNotifications) {
+      this.clearOneShotCleanup();
       this.customNotification = null;
       this.typedNotification = null;
     }
@@ -170,7 +174,7 @@ export class BaseStationOledService extends EventEmitter {
   }
 
   public showCustomNotification(title: string, body: string): void {
-    if (!this.config.showCustomNotifications || !this.running) {
+    if (!this.config.showCustomNotifications) {
       return;
     }
     const safeTitle = normalizeFrameLine(title, 20) || "CONTROL CENTRE";
@@ -180,7 +184,11 @@ export class BaseStationOledService extends EventEmitter {
       body: safeBody,
       expiresAt: Date.now() + this.config.customNotificationDurationMs,
     };
-    this.requestRefresh(true);
+    if (this.running) {
+      this.requestRefresh(true);
+    } else {
+      void this.startOneShot();
+    }
   }
 
   /**
@@ -198,7 +206,7 @@ export class BaseStationOledService extends EventEmitter {
     valueText: string,
     valuePercent?: number,
   ): void {
-    if (!this.config.showCustomNotifications || !this.running) {
+    if (!this.config.showCustomNotifications) {
       return;
     }
     this.typedNotification = {
@@ -212,19 +220,60 @@ export class BaseStationOledService extends EventEmitter {
       animFrameIndex: 0,
     };
     this.customNotification = null;
-    this.requestRefresh(true);
-    // Drive 3 rapid re-renders so the progress bar animates on-screen.
-    this.scheduleAnimFrame(180);
-    this.scheduleAnimFrame(360);
-    this.scheduleAnimFrame(540);
+    if (this.running) {
+      this.requestRefresh(true);
+      // Drive 3 rapid re-renders so the progress bar animates on-screen.
+      this.scheduleAnimFrame(180);
+      this.scheduleAnimFrame(360);
+      this.scheduleAnimFrame(540);
+    } else {
+      void this.startOneShot();
+    }
   }
 
   private scheduleAnimFrame(delayMs: number): void {
     setTimeout(() => {
-      if (this.running && this.typedNotification && Date.now() < this.typedNotification.expiresAt) {
+      if (!this.typedNotification || Date.now() >= this.typedNotification.expiresAt) {
+        return;
+      }
+      if (this.running) {
         this.requestRefresh(true);
+      } else if (this.oneShotActive) {
+        void this.publishFrame(true);
       }
     }, delayMs);
+  }
+
+  /**
+   * Delivers a notification frame directly to the device without the display
+   * loop running, then returns the display to SteelSeries after it expires.
+   */
+  private async startOneShot(): Promise<void> {
+    this.clearOneShotCleanup();
+    this.oneShotActive = true;
+    this.ensureHidLoaded();
+    void this.publishFrame(true);
+    // Drive 3 rapid re-renders for progress bar animation.
+    this.scheduleAnimFrame(180);
+    this.scheduleAnimFrame(360);
+    this.scheduleAnimFrame(540);
+    this.oneShotCleanupTimer = setTimeout(() => {
+      this.oneShotCleanupTimer = null;
+      this.oneShotActive = false;
+      this.typedNotification = null;
+      this.customNotification = null;
+      if (!this.running) {
+        this.returnToSteelSeriesUi();
+      }
+    }, this.config.customNotificationDurationMs + 100);
+  }
+
+  private clearOneShotCleanup(): void {
+    if (this.oneShotCleanupTimer) {
+      clearTimeout(this.oneShotCleanupTimer);
+      this.oneShotCleanupTimer = null;
+    }
+    this.oneShotActive = false;
   }
 
   public start(): void {
@@ -239,10 +288,11 @@ export class BaseStationOledService extends EventEmitter {
   }
 
   public stop(): void {
-    if (!this.running && !this.timer && !this.pendingRefreshTimer) {
+    if (!this.running && !this.timer && !this.pendingRefreshTimer && !this.oneShotActive) {
       return;
     }
     this.running = false;
+    this.clearOneShotCleanup();
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
@@ -302,8 +352,8 @@ export class BaseStationOledService extends EventEmitter {
     }, wait);
   }
 
-  private async publishFrame(): Promise<void> {
-    if (!this.running) {
+  private async publishFrame(forceOneShot = false): Promise<void> {
+    if (!this.running && !forceOneShot) {
       return;
     }
     this.lastPublishAt = Date.now();
