@@ -76,6 +76,19 @@ export const DEFAULT_SETTINGS: UiSettings = {
     showBatteryInfo: true,
     showChatMix: true,
     showCustomNotifications: false,
+    oledNotifications: {
+      connectivity: true,
+      usbInput: true,
+      ancMode: true,
+      sidetone: true,
+      micMute: true,
+      headsetChatMix: true,
+      headsetVolume: true,
+      battery: true,
+      presetChange: true,
+      oled: false,
+      appInfo: false,
+    },
   },
   ddc: {
     apiBaseUrl: "http://127.0.0.1:59321",
@@ -211,6 +224,10 @@ export function mergeSettings(partial?: Partial<UiSettings>): UiSettings {
       showBatteryInfo: partialSanitized.baseStationOled?.showBatteryInfo !== false,
       showChatMix: partialSanitized.baseStationOled?.showChatMix !== false,
       showCustomNotifications: partialSanitized.baseStationOled?.showCustomNotifications === true,
+      oledNotifications: {
+        ...DEFAULT_SETTINGS.baseStationOled.oledNotifications,
+        ...(partialSanitized.baseStationOled?.oledNotifications ?? {}),
+      },
     },
     ddc: {
       ...DEFAULT_SETTINGS.ddc,

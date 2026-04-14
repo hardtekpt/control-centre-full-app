@@ -1,4 +1,4 @@
-import type { UiSettings } from "@shared/types";
+import type { NotificationKey, UiSettings } from "@shared/types";
 import type { OledServiceFrame } from "../../stores/store";
 
 interface OledServiceSettingsTabProps {
@@ -6,6 +6,24 @@ interface OledServiceSettingsTabProps {
   oledServiceFrame: OledServiceFrame | null;
   onUpdate: (partial: Partial<UiSettings>) => void;
 }
+
+interface OledNotifItem {
+  key: NotificationKey;
+  label: string;
+}
+
+const OLED_NOTIF_ITEMS: OledNotifItem[] = [
+  { key: "headsetVolume", label: "Headset Volume" },
+  { key: "micMute", label: "Mic Mute" },
+  { key: "ancMode", label: "ANC Mode" },
+  { key: "battery", label: "Battery" },
+  { key: "connectivity", label: "Connection" },
+  { key: "sidetone", label: "Sidetone" },
+  { key: "usbInput", label: "USB Input" },
+  { key: "presetChange", label: "Preset Change" },
+  { key: "headsetChatMix", label: "Chat Mix" },
+  { key: "oled", label: "OLED Brightness" },
+];
 
 export default function OledServiceSettingsTab({ settings, oledServiceFrame, onUpdate }: OledServiceSettingsTabProps) {
   const oledSettings = settings.baseStationOled;
@@ -15,6 +33,14 @@ export default function OledServiceSettingsTab({ settings, oledServiceFrame, onU
       baseStationOled: {
         ...oledSettings,
         ...partial,
+      },
+    });
+
+  const updateOledNotif = (key: NotificationKey, value: boolean) =>
+    updateOled({
+      oledNotifications: {
+        ...oledSettings.oledNotifications,
+        [key]: value,
       },
     });
 
@@ -113,6 +139,29 @@ export default function OledServiceSettingsTab({ settings, oledServiceFrame, onU
           </label>
         </div>
       </div>
+
+      {oledSettings.showCustomNotifications === true && (
+        <div className="settings-section">
+          <div className="settings-section-title">OLED Notifications</div>
+          <p className="settings-help-text">
+            Choose which headset events appear as full-screen notifications on the OLED display. Each notification
+            shows a dedicated icon, label and animated value bar. These toggles are independent of the desktop
+            notification settings above.
+          </p>
+          <div className="visible-grid">
+            {OLED_NOTIF_ITEMS.map(({ key, label }) => (
+              <label key={key} className="visible-item">
+                <input
+                  type="checkbox"
+                  checked={oledSettings.oledNotifications?.[key] !== false}
+                  onChange={(event) => updateOledNotif(key, event.currentTarget.checked)}
+                />
+                <span>{label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="settings-section">
         <div className="settings-section-title">Last Payload</div>
