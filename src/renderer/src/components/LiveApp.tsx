@@ -269,7 +269,7 @@ export default function LiveApp({ windowMode }: LiveAppProps) {
         onSetMixerOutput={(outputId) => void actions.setMixerOutput(outputId)}
         onSetMixerAppVolume={(appId, value) => void actions.setMixerAppVolume(appId, value)}
         onSetMixerAppMute={(appId, muted) => void actions.setMixerAppMute(appId, muted)}
-        onSetDdcBrightness={(monitorId, value) => void actions.setDdcBrightness(monitorId, value)}
+        onSetDdcBrightness={(monitorId, value) => actions.setDdcBrightness(monitorId, value)}
         onSetDdcInputSource={(monitorId, value) => void actions.setDdcInputSource(monitorId, value)}
         discordEnabled={resolvedSettings.services.discordEnabled === true}
         discordVoiceState={discordVoiceState}

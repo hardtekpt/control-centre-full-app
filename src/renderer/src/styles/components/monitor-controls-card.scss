@@ -55,6 +55,21 @@
 
 .monitor-slider {
   min-width: 0;
+
+  .horizontal-progress {
+    transition: background-color 200ms ease;
+  }
+}
+
+/** Slider is in the 'active' state while the user drags or a DDC write is in-flight. */
+.monitor-slider.is-active {
+  .horizontal-progress {
+    background-color: color-mix(in srgb, var(--system-accent-medium) 40%, transparent);
+  }
+
+  .horizontal-track {
+    background: color-mix(in srgb, var(--slider-track-color) 60%, transparent);
+  }
 }
 
 .monitor-inline-disconnected-text {
