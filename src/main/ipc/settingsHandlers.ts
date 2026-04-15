@@ -67,10 +67,6 @@ export function createSettingsIpcHandler(deps: CreateSettingsIpcHandlerDeps): (p
         ...currentSettings.services,
         ...(partial.services ?? {}),
       },
-      baseStationOled: {
-        ...currentSettings.baseStationOled,
-        ...(partial.baseStationOled ?? {}),
-      },
       ddc: {
         ...currentSettings.ddc,
         ...(partial.ddc ?? {}),

@@ -41,7 +41,6 @@ export const IPC_EVENT = {
   APP_LOG: "app:log",
   DDC_UPDATE: "ddc:update",
   OPEN_APPS_UPDATE: "open-apps:update",
-  OLED_SERVICE_FRAME: "oled-service:frame",
   DISCORD_VOICE_UPDATE: "discord:voice-update",
   DISCORD_STATE_UPDATE: "discord:state-update",
 } as const;
@@ -70,14 +69,6 @@ export interface ServiceStatusPayload {
     endpoint: string;
     managed: boolean;
     pid: number | null;
-  };
-  baseStationOled: {
-    state: ServiceLifecycleState;
-    detail: string;
-  };
-  oledNotifications: {
-    state: ServiceLifecycleState;
-    detail: string;
   };
   notifications: {
     state: ServiceLifecycleState;
@@ -158,12 +149,6 @@ export interface DdcMutateMonitorResponse {
   error?: string;
 }
 
-export interface OledServiceFramePayload {
-  line1: string;
-  line2: string;
-  generatedAtIso: string;
-}
-
 export interface ExportSettingsResponse {
   ok: boolean;
   path?: string;
@@ -203,7 +188,6 @@ export interface InitialPayload {
   logs: string[];
   ddcMonitors: DdcMonitorPayload[];
   ddcMonitorsUpdatedAt: number | null;
-  baseStationOledFrame: OledServiceFramePayload | null;
   flyoutPinned: boolean;
   serviceStatus: ServiceStatusPayload;
   discordVoiceState: DiscordVoiceStatePayload;
@@ -246,7 +230,6 @@ export interface IpcEventPayloadMap {
   [IPC_EVENT.APP_LOG]: string;
   [IPC_EVENT.DDC_UPDATE]: DdcMonitorPayload[];
   [IPC_EVENT.OPEN_APPS_UPDATE]: RunningAppInfo[];
-  [IPC_EVENT.OLED_SERVICE_FRAME]: OledServiceFramePayload;
   [IPC_EVENT.DISCORD_VOICE_UPDATE]: DiscordVoiceStatePayload;
   [IPC_EVENT.DISCORD_STATE_UPDATE]: DiscordVoiceStatePayload;
 }
@@ -286,7 +269,6 @@ export interface ArctisBridgeApi {
   onLog(cb: (line: string) => void): () => void;
   onOpenApps(cb: (apps: RunningAppInfo[]) => void): () => void;
   onDdcUpdate(cb: (monitors: DdcMonitorPayload[]) => void): () => void;
-  onOledServiceFrame(cb: (frame: OledServiceFramePayload) => void): () => void;
   discordConnect(): Promise<BooleanOkResponse>;
   discordDisconnect(): Promise<BooleanOkResponse>;
   getDiscordVoiceUsers(): Promise<DiscordVoiceStatePayload>;

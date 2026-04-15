@@ -64,8 +64,6 @@ export interface UiSettings {
     sonarApiEnabled: boolean;
     hidEventsEnabled: boolean;
     ddcEnabled: boolean;
-    oledDisplayEnabled: boolean;
-    oledNotificationsEnabled: boolean;
     notificationsEnabled: boolean;
     automaticPresetSwitcherEnabled: boolean;
     shortcutsEnabled: boolean;
@@ -75,17 +73,6 @@ export interface UiSettings {
   discord: {
     clientId: string;
     accessToken: string;
-  };
-  baseStationOled: {
-    refreshIntervalMs: number;
-    showHeadsetVolume: boolean;
-    showMicMuteStatus: boolean;
-    showAncMode: boolean;
-    showBatteryInfo: boolean;
-    showChatMix: boolean;
-    showCustomNotifications: boolean;
-    /** Per-event OLED notification toggles (independent of desktop notification flags). */
-    oledNotifications: Partial<Record<NotificationKey, boolean>>;
   };
   ddc: {
     apiBaseUrl: string;
