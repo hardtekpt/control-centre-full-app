@@ -54,7 +54,7 @@ export default function AboutSettingsTab({ lastStatus, lastError, serviceStatus,
             meta={`${serviceStatus.ddcApi.endpoint ?? "n/a"} · PID ${serviceStatus.ddcApi.pid ?? "n/a"}`}
           />
           <ServiceRow
-            name="Notifications"
+            name="OSD Notifications"
             state={serviceStatus.notifications.state}
             detail={serviceStatus.notifications.detail}
           />

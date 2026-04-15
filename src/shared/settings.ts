@@ -108,9 +108,15 @@ export function mergeState(partial?: Partial<AppState>): AppState {
 }
 
 export function mergeSettings(partial?: Partial<UiSettings>): UiSettings {
-  const { micaBlur: _legacyMicaBlur, closeOnBlur: _legacyCloseOnBlur, ...partialSanitized } = (partial ?? {}) as Partial<UiSettings> & {
+  const {
+    micaBlur: _legacyMicaBlur,
+    closeOnBlur: _legacyCloseOnBlur,
+    baseStationOled: _legacyBaseStationOled,
+    ...partialSanitized
+  } = (partial ?? {}) as Partial<UiSettings> & {
     micaBlur?: boolean;
     closeOnBlur?: boolean;
+    baseStationOled?: unknown;
   };
   const { chatMix: legacyChatMix, ...notificationsSanitized } = ((partialSanitized.notifications ?? {}) as Record<string, boolean> & {
     chatMix?: boolean;
@@ -123,8 +129,18 @@ export function mergeSettings(partial?: Partial<UiSettings>): UiSettings {
     partialSanitized.visibleChannels?.filter((channel): channel is ChannelKey => DEFAULT_CHANNELS.includes(channel)) ??
     DEFAULT_SETTINGS.visibleChannels;
   const automaticPresetRules = sanitizeAutomaticPresetRules(partialSanitized.automaticPresetRules);
+  // Strip legacy OLED service keys that existed before the base station OLED display
+  // service was removed. These keys must not bleed back into the persisted settings.
+  const {
+    oledDisplayEnabled: _legacyOledDisplay,
+    oledNotificationsEnabled: _legacyOledNotifications,
+    ...servicesSanitized
+  } = ((partialSanitized.services ?? {}) as Record<string, unknown> & {
+    oledDisplayEnabled?: unknown;
+    oledNotificationsEnabled?: unknown;
+  });
   const rawSonarPoll = Number(
-    partialSanitized.services?.sonarPollIntervalMs ?? DEFAULT_SETTINGS.services.sonarPollIntervalMs,
+    servicesSanitized.sonarPollIntervalMs ?? DEFAULT_SETTINGS.services.sonarPollIntervalMs,
   );
   const sonarPollIntervalMs = rawSonarPoll <= 120 ? rawSonarPoll * 1000 : rawSonarPoll;
   const dashboardMonitorIdRaw = Number(partialSanitized.ddc?.dashboardMonitorId);
@@ -170,15 +186,15 @@ export function mergeSettings(partial?: Partial<UiSettings>): UiSettings {
     },
     services: {
       ...DEFAULT_SETTINGS.services,
-      ...(partialSanitized.services ?? {}),
-      sonarApiEnabled: partialSanitized.services?.sonarApiEnabled !== false,
-      hidEventsEnabled: partialSanitized.services?.hidEventsEnabled !== false,
-      ddcEnabled: partialSanitized.services?.ddcEnabled !== false,
-      notificationsEnabled: partialSanitized.services?.notificationsEnabled !== false,
-      automaticPresetSwitcherEnabled: partialSanitized.services?.automaticPresetSwitcherEnabled !== false,
-      shortcutsEnabled: partialSanitized.services?.shortcutsEnabled !== false,
+      ...servicesSanitized,
+      sonarApiEnabled: servicesSanitized.sonarApiEnabled !== false,
+      hidEventsEnabled: servicesSanitized.hidEventsEnabled !== false,
+      ddcEnabled: servicesSanitized.ddcEnabled !== false,
+      notificationsEnabled: servicesSanitized.notificationsEnabled !== false,
+      automaticPresetSwitcherEnabled: servicesSanitized.automaticPresetSwitcherEnabled !== false,
+      shortcutsEnabled: servicesSanitized.shortcutsEnabled !== false,
       sonarPollIntervalMs: clamp(sonarPollIntervalMs, 500, 60_000),
-      discordEnabled: partialSanitized.services?.discordEnabled === true,
+      discordEnabled: servicesSanitized.discordEnabled === true,
     },
     discord: {
       ...DEFAULT_SETTINGS.discord,
