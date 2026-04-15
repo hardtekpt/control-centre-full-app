@@ -51,7 +51,6 @@ const IPC_EVENT = {
   APP_LOG: "app:log",
   DDC_UPDATE: "ddc:update",
   OPEN_APPS_UPDATE: "open-apps:update",
-  OLED_SERVICE_FRAME: "oled-service:frame",
   DISCORD_VOICE_UPDATE: "discord:voice-update",
   DISCORD_STATE_UPDATE: "discord:state-update",
 } as const;
@@ -97,7 +96,6 @@ const api: ArctisBridgeApi = {
   onLog: (cb) => subscribe(IPC_EVENT.APP_LOG, cb),
   onDdcUpdate: (cb) => subscribe(IPC_EVENT.DDC_UPDATE, cb),
   onOpenApps: (cb) => subscribe(IPC_EVENT.OPEN_APPS_UPDATE, cb),
-  onOledServiceFrame: (cb) => subscribe(IPC_EVENT.OLED_SERVICE_FRAME, cb),
   discordConnect: () => invoke(IPC_INVOKE.DISCORD_CONNECT),
   discordDisconnect: () => invoke(IPC_INVOKE.DISCORD_DISCONNECT),
   getDiscordVoiceUsers: () => invoke(IPC_INVOKE.DISCORD_GET_VOICE_USERS),

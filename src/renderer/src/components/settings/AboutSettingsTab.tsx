@@ -54,16 +54,6 @@ export default function AboutSettingsTab({ lastStatus, lastError, serviceStatus,
             meta={`${serviceStatus.ddcApi.endpoint ?? "n/a"} · PID ${serviceStatus.ddcApi.pid ?? "n/a"}`}
           />
           <ServiceRow
-            name="Base Station OLED"
-            state={serviceStatus.baseStationOled.state}
-            detail={serviceStatus.baseStationOled.detail}
-          />
-          <ServiceRow
-            name="OLED Notifications"
-            state={serviceStatus.oledNotifications.state}
-            detail={serviceStatus.oledNotifications.detail}
-          />
-          <ServiceRow
             name="Notifications"
             state={serviceStatus.notifications.state}
             detail={serviceStatus.notifications.detail}

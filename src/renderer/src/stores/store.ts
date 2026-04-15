@@ -5,7 +5,6 @@ import {
   type DdcMonitorPayload,
   type DiscordVoiceStatePayload,
   type MixerDataPayload,
-  type OledServiceFramePayload,
   type ServiceStatusPayload,
 } from "@shared/ipc";
 import { DEFAULT_SETTINGS, mergeState } from "@shared/settings";
@@ -24,7 +23,6 @@ function clampPercent(value: number): number {
 export type DdcMonitor = DdcMonitorPayload;
 
 export type ServiceStatus = ServiceStatusPayload;
-export type OledServiceFrame = OledServiceFramePayload;
 
 /**
  * Central renderer state hook that bridges preload IPC events with React state.
@@ -45,14 +43,11 @@ export function useBridgeState() {
   const [ddcMonitors, setDdcMonitors] = useState<DdcMonitor[]>([]);
   const [ddcMonitorsUpdatedAt, setDdcMonitorsUpdatedAt] = useState<number | null>(null);
   const [ddcError, setDdcError] = useState<string | null>(null);
-  const [oledServiceFrame, setOledServiceFrame] = useState<OledServiceFrame | null>(null);
   const [flyoutPinned, setFlyoutPinned] = useState(false);
   const [serviceStatus, setServiceStatus] = useState<ServiceStatus>({
     sonarApi: { state: "starting", detail: "Initializing...", endpoint: null, pollIntervalMs: 2000 },
     hidEvents: { state: "starting", detail: "Initializing..." },
     ddcApi: { state: "starting", detail: "Initializing...", endpoint: "", managed: false, pid: null },
-    baseStationOled: { state: "starting", detail: "Initializing..." },
-    oledNotifications: { state: "starting", detail: "Initializing..." },
     notifications: { state: "starting", detail: "Initializing..." },
     automaticPresetSwitcher: { state: "starting", detail: "Initializing..." },
     shortcuts: { state: "starting", detail: "Initializing..." },
@@ -108,7 +103,6 @@ export function useBridgeState() {
       setLogs(Array.isArray(payload.logs) ? payload.logs : []);
       setDdcMonitors(Array.isArray(payload.ddcMonitors) ? payload.ddcMonitors : []);
       setDdcMonitorsUpdatedAt(Number.isFinite(payload.ddcMonitorsUpdatedAt) ? Number(payload.ddcMonitorsUpdatedAt) : null);
-      setOledServiceFrame(payload.baseStationOledFrame ?? null);
       setDdcError(null);
       setFlyoutPinned(Boolean(payload.flyoutPinned));
       if (payload.serviceStatus) {
@@ -165,9 +159,6 @@ export function useBridgeState() {
       setDdcMonitorsUpdatedAt(Date.now());
       setDdcError(null);
     });
-    const offOledFrame = window.arctisBridge.onOledServiceFrame((frame) => {
-      setOledServiceFrame(frame);
-    });
     const offDiscordVoice = window.arctisBridge.onDiscordVoiceUpdate((p) => setDiscordVoiceState(p));
     const offDiscordState = window.arctisBridge.onDiscordStateUpdate((p) => setDiscordVoiceState(p));
     // When the window is shown again after being hidden, refresh mixer data in the
@@ -190,7 +181,6 @@ export function useBridgeState() {
       offLog();
       offOpenApps();
       offDdc();
-      offOledFrame();
       offDiscordVoice();
       offDiscordState();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
@@ -393,7 +383,6 @@ export function useBridgeState() {
     ddcMonitors,
     ddcMonitorsUpdatedAt,
     ddcError,
-    oledServiceFrame,
     flyoutPinned,
     openApps,
     serviceStatus,

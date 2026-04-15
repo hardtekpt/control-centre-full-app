@@ -128,7 +128,6 @@ export default function LiveApp({ windowMode }: LiveAppProps) {
     ddcMonitors,
     ddcMonitorsUpdatedAt,
     ddcError,
-    oledServiceFrame,
     flyoutPinned,
     serviceStatus,
     discordVoiceState,
@@ -193,7 +192,6 @@ export default function LiveApp({ windowMode }: LiveAppProps) {
           ddcMonitorsUpdatedAt={ddcMonitorsUpdatedAt}
           openApps={openApps}
           ddcError={ddcError}
-          oledServiceFrame={oledServiceFrame}
           logs={logs}
           lastStatus={status}
           lastError={error}
