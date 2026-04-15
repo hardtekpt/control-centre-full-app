@@ -22,7 +22,7 @@ const SERVICE_LIST: ServiceEntry[] = [
   { label: "Sonar GG API",      settingKey: "sonarApiEnabled",                  statusKey: "sonarApi" },
   { label: "HID Events",        settingKey: "hidEventsEnabled",                 statusKey: "hidEvents" },
   { label: "DDC",               settingKey: "ddcEnabled",                       statusKey: "ddcApi" },
-  { label: "Notifications",     settingKey: "notificationsEnabled",             statusKey: "notifications" },
+  { label: "OSD Notifications", settingKey: "notificationsEnabled",             statusKey: "notifications" },
   { label: "Preset Switcher",   settingKey: "automaticPresetSwitcherEnabled",   statusKey: "automaticPresetSwitcher" },
   { label: "Shortcuts",         settingKey: "shortcutsEnabled",                 statusKey: "shortcuts" },
   { label: "Discord RPC",       settingKey: "discordEnabled",                   statusKey: "discordRpc" },

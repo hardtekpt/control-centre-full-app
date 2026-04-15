@@ -7,11 +7,10 @@ interface OledNotificationsSettingsTabProps {
 }
 
 /**
- * OSD popup notification service settings — enable/disable, timing, and per-event toggles.
+ * OSD popup notification service settings — timing and per-event toggles.
+ * The service enable/disable toggle is in the App Settings tab (Background Services).
  */
 export default function OledNotificationsSettingsTab({ settings, onUpdate }: OledNotificationsSettingsTabProps) {
-  const serviceSettings = settings.services;
-
   const toggleNotification = (key: NotificationKey, enabled: boolean) => {
     onUpdate({
       notifications: {
@@ -24,18 +23,6 @@ export default function OledNotificationsSettingsTab({ settings, onUpdate }: Ole
   return (
     <>
       <h3>OSD Notifications</h3>
-
-      <div className="settings-section">
-        <div className="settings-section-title">Service</div>
-        <label className="form-row">
-          <span>Enable OSD notifications</span>
-          <input
-            type="checkbox"
-            checked={serviceSettings.notificationsEnabled !== false}
-            onChange={(event) => onUpdate({ services: { ...serviceSettings, notificationsEnabled: event.currentTarget.checked } })}
-          />
-        </label>
-      </div>
 
       <div className="settings-section">
         <div className="settings-section-title">Timing</div>
