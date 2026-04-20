@@ -303,7 +303,7 @@ function renderTypedNotificationBitmap(notif: ActiveNotification): Uint8Array {
   const iconX  = Math.floor((W - ICON_SIZE) / 2);     // 46
   const textY  = iconY + ICON_SIZE + GAP;              // 49
 
-  drawNotifIconScaled(pixels, iconX, iconY, notif.kind, ICON_SCALE);
+  drawIconScaled(pixels, iconX, iconY, selectIcon(notif.kind, notif.valueText), ICON_SCALE);
 
   if (notif.valueText) {
     drawCenteredText(pixels, W, H, notif.valueText, textY);
@@ -347,9 +347,22 @@ function drawCenteredText(pixels: Uint8Array, w: number, h: number, text: string
   }
 }
 
-/** Draws the 12×12 source icon scaled up by `scale` (nearest-neighbour). */
-function drawNotifIconScaled(pixels: Uint8Array, x: number, y: number, kind: OledNotifKind, scale: number): void {
-  const icon = NOTIF_ICONS[kind] ?? NOTIF_ICONS.generic;
+/**
+ * Picks the correct icon variant for a notification, allowing state-dependent
+ * icons (e.g. mic muted vs live, ANC on vs off).
+ */
+function selectIcon(kind: OledNotifKind, valueText: string): string[] {
+  if (kind === "micMute") {
+    return valueText === "MUTED" ? ICON_MIC_MUTED : ICON_MIC_LIVE;
+  }
+  if (kind === "ancMode") {
+    return valueText === "OFF" ? ICON_ANC_OFF : ICON_ANC_ON;
+  }
+  return NOTIF_ICONS[kind] ?? NOTIF_ICONS.generic;
+}
+
+/** Draws a source icon bitmap scaled up by `scale` (nearest-neighbour). */
+function drawIconScaled(pixels: Uint8Array, x: number, y: number, icon: string[], scale: number): void {
   for (let row = 0; row < icon.length; row++) {
     const line = icon[row];
     for (let col = 0; col < line.length; col++) {
@@ -462,6 +475,64 @@ const FONT_5X7: Record<string, string[]> = {
 
 // ─── 12×12 notification icons ────────────────────────────────────────────────
 
+// Mic (live / unmuted) — clean microphone silhouette.
+const ICON_MIC_LIVE: string[] = [
+  "000111100000","001111110000","001100110000","001100110000",
+  "001100110000","001111110000","000111100000","000011000000",
+  "001111110000","000011000000","000111100000","000000000000",
+];
+
+// Mic (muted) — same silhouette with a top-right→bottom-left diagonal slash OR'd over it.
+// The slash is clearly visible at the icon corners where it doesn't overlap the mic body.
+const ICON_MIC_MUTED: string[] = [
+  "000111100011",  // mic top    + slash cols 10,11
+  "001111110110",  // mic body   + slash cols 9,10
+  "001100111100",  // mic body   + slash cols 8,9
+  "001100111000",  // mic body   + slash cols 7,8
+  "001100110000",  // (slash overlaps mic body — no visual change)
+  "001111110000",  // (slash overlaps mic body — no visual change)
+  "000111100000",  // (slash overlaps mic body — no visual change)
+  "000111000000",  // neck       + slash col 3
+  "001111110000",  // (slash overlaps mic base — no visual change)
+  "011011000000",  // mic leg    + slash cols 1,2
+  "110111100000",  // mic feet   + slash cols 0,1
+  "110000000000",  // slash tail cols 0,1
+];
+
+// ANC active (ANC on or Transparency mode) — "ANC" in a compact 3×5 pixel font.
+// Layout: A at cols 0-2, gap at 3, N at cols 4-6, gap at 7, C at cols 8-10.
+// Letters are vertically centred at rows 3-7.
+const ICON_ANC_ON: string[] = [
+  "000000000000",
+  "000000000000",
+  "000000000000",
+  "010010100110",  // A row0=010  N row0=101  C row0=011
+  "101011101000",  // A row1=101  N row1=111  C row1=100
+  "111010101000",  // A row2=111  N row2=101  C row2=100
+  "101010101000",  // A row3=101  N row3=101  C row3=100
+  "101010100110",  // A row4=101  N row4=101  C row4=011
+  "000000000000",
+  "000000000000",
+  "000000000000",
+  "000000000000",
+];
+
+// ANC off — same "ANC" text with a full-width horizontal strikethrough at the mid-row.
+const ICON_ANC_OFF: string[] = [
+  "000000000000",
+  "000000000000",
+  "000000000000",
+  "010010100110",
+  "101011101000",
+  "111111111111",  // strikethrough (all 12 columns lit)
+  "101010101000",
+  "101010100110",
+  "000000000000",
+  "000000000000",
+  "000000000000",
+  "000000000000",
+];
+
 const NOTIF_ICONS: Record<OledNotifKind, string[]> = {
   headsetVolume: [
     "000000000000","000110000000","001111000100","011111001110",
@@ -473,16 +544,8 @@ const NOTIF_ICONS: Record<OledNotifKind, string[]> = {
     "001111001111","000110000110","000000000000","001111111100",
     "000001100000","000001100000","001111111100","000000000000",
   ],
-  micMute: [
-    "000111100000","001111110000","001100110000","001100110000",
-    "001100110000","001111110000","000111100000","000011000000",
-    "001111110000","000011000000","000111100000","000000000000",
-  ],
-  ancMode: [
-    "000011000000","000111100000","001100110000","011000011000",
-    "110001001100","110011001100","110001001100","011000011000",
-    "001100110000","000111100000","000011000000","000000000000",
-  ],
+  micMute: ICON_MIC_LIVE,
+  ancMode: ICON_ANC_ON,
   battery: [
     "001111111100","011000000110","110111111011","110111111011",
     "110111111011","110111111011","110111111011","110111111011",
