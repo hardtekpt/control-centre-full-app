@@ -8,6 +8,7 @@ import DdcSettingsTab from "../components/settings/DdcSettingsTab";
 import DiscordSettingsTab from "../components/settings/DiscordSettingsTab";
 import GgSonarSettingsTab from "../components/settings/GgSonarSettingsTab";
 import OledNotificationsSettingsTab from "../components/settings/OledNotificationsSettingsTab";
+import OledDisplaySettingsTab from "../components/settings/OledDisplaySettingsTab";
 import SettingsSidebar from "../components/settings/SettingsSidebar";
 import ShortcutsSettingsTab from "../components/settings/ShortcutsSettingsTab";
 import type { SettingsTab } from "../components/settings/types";
@@ -530,6 +531,10 @@ export default function SettingsPage({
 
         {tab === "oledNotifications" && (
           <OledNotificationsSettingsTab settings={settings} onUpdate={onUpdate} />
+        )}
+
+        {tab === "oledDisplay" && (
+          <OledDisplaySettingsTab settings={settings} onUpdate={onUpdate} />
         )}
 
         {tab === "autoPreset" && (

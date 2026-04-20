@@ -52,6 +52,20 @@ export const DEFAULT_SETTINGS: UiSettings = {
     appInfo: true,
     presetChange: true,
   },
+  oledNotifications: {
+    connectivity: true,
+    usbInput: true,
+    ancMode: true,
+    oled: true,
+    sidetone: true,
+    micMute: true,
+    headsetChatMix: true,
+    headsetVolume: true,
+    battery: true,
+    appInfo: false,
+    presetChange: true,
+  },
+  oledNotificationTimeoutMs: 5000,
   automaticPresetRules: [],
   services: {
     sonarApiEnabled: true,
@@ -62,6 +76,7 @@ export const DEFAULT_SETTINGS: UiSettings = {
     shortcutsEnabled: true,
     sonarPollIntervalMs: 2000,
     discordEnabled: false,
+    oledDisplayEnabled: false,
   },
   discord: {
     clientId: "",
@@ -129,14 +144,11 @@ export function mergeSettings(partial?: Partial<UiSettings>): UiSettings {
     partialSanitized.visibleChannels?.filter((channel): channel is ChannelKey => DEFAULT_CHANNELS.includes(channel)) ??
     DEFAULT_SETTINGS.visibleChannels;
   const automaticPresetRules = sanitizeAutomaticPresetRules(partialSanitized.automaticPresetRules);
-  // Strip legacy OLED service keys that existed before the base station OLED display
-  // service was removed. These keys must not bleed back into the persisted settings.
+  // Strip legacy OLED notification service toggle (separate from the new oledDisplayEnabled).
   const {
-    oledDisplayEnabled: _legacyOledDisplay,
     oledNotificationsEnabled: _legacyOledNotifications,
     ...servicesSanitized
   } = ((partialSanitized.services ?? {}) as Record<string, unknown> & {
-    oledDisplayEnabled?: unknown;
     oledNotificationsEnabled?: unknown;
   });
   const rawSonarPoll = Number(
@@ -184,6 +196,15 @@ export function mergeSettings(partial?: Partial<UiSettings>): UiSettings {
       ...DEFAULT_SETTINGS.notifications,
       ...notificationsWithLegacy,
     },
+    oledNotifications: {
+      ...DEFAULT_SETTINGS.oledNotifications,
+      ...(partialSanitized.oledNotifications ?? {}),
+    },
+    oledNotificationTimeoutMs: clamp(
+      Number(partialSanitized.oledNotificationTimeoutMs ?? DEFAULT_SETTINGS.oledNotificationTimeoutMs),
+      2000,
+      30_000,
+    ),
     services: {
       ...DEFAULT_SETTINGS.services,
       ...servicesSanitized,
@@ -195,6 +216,7 @@ export function mergeSettings(partial?: Partial<UiSettings>): UiSettings {
       shortcutsEnabled: servicesSanitized.shortcutsEnabled !== false,
       sonarPollIntervalMs: clamp(sonarPollIntervalMs, 500, 60_000),
       discordEnabled: servicesSanitized.discordEnabled === true,
+      oledDisplayEnabled: servicesSanitized.oledDisplayEnabled === true,
     },
     discord: {
       ...DEFAULT_SETTINGS.discord,

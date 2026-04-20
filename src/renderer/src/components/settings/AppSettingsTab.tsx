@@ -26,6 +26,7 @@ const SERVICE_LIST: ServiceEntry[] = [
   { label: "Preset Switcher",   settingKey: "automaticPresetSwitcherEnabled",   statusKey: "automaticPresetSwitcher" },
   { label: "Shortcuts",         settingKey: "shortcutsEnabled",                 statusKey: "shortcuts" },
   { label: "Discord RPC",       settingKey: "discordEnabled",                   statusKey: "discordRpc" },
+  { label: "OLED Notifications", settingKey: "oledDisplayEnabled",              statusKey: "oledNotifications" },
 ];
 
 /**
@@ -54,6 +55,7 @@ export default function AppSettingsTab({
 
   const isEnabled = (key: keyof UiSettings["services"]): boolean => {
     if (key === "discordEnabled") return serviceSettings.discordEnabled === true;
+    if (key === "oledDisplayEnabled") return serviceSettings.oledDisplayEnabled === true;
     return (serviceSettings[key] as boolean | undefined) !== false;
   };
 

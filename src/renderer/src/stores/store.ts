@@ -52,6 +52,7 @@ export function useBridgeState() {
     automaticPresetSwitcher: { state: "starting", detail: "Initializing..." },
     shortcuts: { state: "starting", detail: "Initializing..." },
     discordRpc: { state: "stopped", detail: "Not started.", channelName: null },
+    oledNotifications: { state: "stopped", detail: "Initializing..." },
   });
   const [discordVoiceState, setDiscordVoiceState] = useState<DiscordVoiceStatePayload>({
     rpcState: "stopped",
