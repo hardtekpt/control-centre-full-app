@@ -24,7 +24,10 @@ interface SettingsProps {
   lastError: string | null;
   serviceStatus: ServiceStatus;
   initialTab?: SettingsTab;
+  isDirty: boolean;
   onUpdate: (partial: Partial<UiSettings>) => void;
+  onSave: () => Promise<void>;
+  onDiscardChanges: () => void;
   onRefreshDdcMonitors: () => void;
   openApps: RunningAppInfo[];
 }
@@ -128,11 +131,36 @@ export default function SettingsPage({
   lastError,
   serviceStatus,
   initialTab = "app",
+  isDirty,
   onUpdate,
+  onSave,
+  onDiscardChanges,
   onRefreshDdcMonitors,
   openApps,
 }: SettingsProps) {
   const [tab, setTab] = useState<SettingsTab>(initialTab);
+  const [pendingTab, setPendingTab] = useState<SettingsTab | null>(null);
+
+  const handleTabChange = (nextTab: SettingsTab) => {
+    if (isDirty && nextTab !== tab) {
+      setPendingTab(nextTab);
+    } else {
+      setTab(nextTab);
+    }
+  };
+
+  const handleSaveAndSwitch = () => {
+    const target = pendingTab!;
+    setPendingTab(null);
+    void onSave().then(() => setTab(target));
+  };
+
+  const handleDiscardAndSwitch = () => {
+    const target = pendingTab!;
+    setPendingTab(null);
+    onDiscardChanges();
+    setTab(target);
+  };
   const [shortcutDraft, setShortcutDraft] = useState(settings.toggleShortcut);
   const [newShortcut, setNewShortcut] = useState<ShortcutBinding>(defaultShortcutBinding);
   const [newPresetRule, setNewPresetRule] = useState<NewPresetRuleDraft>({ enabled: true, appId: "", channel: "master", presetId: "" });
@@ -511,8 +539,9 @@ export default function SettingsPage({
   };
 
   return (
+    <>
     <section className="card settings-page settings-shell">
-      <SettingsSidebar activeTab={tab} onTabChange={setTab} />
+      <SettingsSidebar activeTab={tab} onTabChange={handleTabChange} />
       <div className="settings-content">
         {tab === "app" && (
           <AppSettingsTab
@@ -603,5 +632,24 @@ export default function SettingsPage({
         )}
       </div>
     </section>
+    {pendingTab !== null && (
+      <div className="confirm-overlay">
+        <div className="confirm-dialog">
+          <p className="confirm-message">You have unsaved changes. What would you like to do?</p>
+          <div className="confirm-actions">
+            <button className="button button-compact" onClick={() => setPendingTab(null)}>
+              Cancel
+            </button>
+            <button className="button button-compact button-primary" onClick={handleSaveAndSwitch}>
+              Save &amp; Switch
+            </button>
+            <button className="button button-compact button-danger" onClick={handleDiscardAndSwitch}>
+              Discard &amp; Switch
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

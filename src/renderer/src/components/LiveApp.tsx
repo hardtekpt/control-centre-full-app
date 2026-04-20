@@ -1,5 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DEFAULT_SETTINGS } from "@shared/settings";
+import type { UiSettings } from "@shared/types";
 import DashboardPage from "../pages/DashboardPage";
 import SettingsPage from "../pages/SettingsPage";
 import { useBridgeState } from "../stores/store";
@@ -137,6 +138,47 @@ export default function LiveApp({ windowMode }: LiveAppProps) {
   const visibleChannels = settings?.visibleChannels ?? [];
   const lastReportedSizeRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 });
 
+  const [draftSettings, setDraftSettings] = useState<UiSettings>(resolvedSettings);
+  const [isDirty, setIsDirty] = useState(false);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const isDirtyRef = useRef(false);
+  isDirtyRef.current = isDirty;
+
+  useEffect(() => {
+    if (windowMode !== "settings") return;
+    if (!isDirtyRef.current) {
+      setDraftSettings(resolvedSettings);
+    }
+  }, [resolvedSettings, windowMode]);
+
+  const handleDraftUpdate = (partial: Partial<UiSettings>) => {
+    setDraftSettings((prev) => ({ ...prev, ...partial }));
+    setIsDirty(true);
+  };
+
+  const handleSave = async () => {
+    await actions.persistSettings(draftSettings);
+    setIsDirty(false);
+  };
+
+  const handleDiscardChanges = () => {
+    setDraftSettings(resolvedSettings);
+    setIsDirty(false);
+  };
+
+  const handleClose = () => {
+    if (isDirty) {
+      setShowCloseConfirm(true);
+    } else {
+      actions.closeCurrentWindow();
+    }
+  };
+
+  const handleSaveAndClose = () => {
+    setShowCloseConfirm(false);
+    void handleSave().then(() => actions.closeCurrentWindow());
+  };
+
   useEffect(() => {
     if (windowMode !== "dashboard") {
       return;
@@ -186,7 +228,7 @@ export default function LiveApp({ windowMode }: LiveAppProps) {
     return (
       <main className="window-base app-shell standalone-page app-shell-layout">
         <SettingsPage
-          settings={resolvedSettings}
+          settings={draftSettings}
           presets={presets}
           ddcMonitors={ddcMonitors}
           ddcMonitorsUpdatedAt={ddcMonitorsUpdatedAt}
@@ -197,14 +239,46 @@ export default function LiveApp({ windowMode }: LiveAppProps) {
           lastError={error}
           serviceStatus={serviceStatus}
           initialTab="app"
-          onUpdate={(partial) => void actions.persistSettings(partial)}
+          onUpdate={handleDraftUpdate}
+          onSave={handleSave}
+          onDiscardChanges={handleDiscardChanges}
+          isDirty={isDirty}
           onRefreshDdcMonitors={() => void actions.refreshDdcMonitors()}
         />
         <div className="standalone-actions">
-          <button className="button button-compact" onClick={() => actions.closeCurrentWindow()}>
+          {isDirty && <span className="unsaved-indicator">Unsaved changes</span>}
+          <button
+            className="button button-compact button-primary"
+            onClick={() => void handleSave()}
+            disabled={!isDirty}
+          >
+            Save
+          </button>
+          <button className="button button-compact" onClick={handleClose}>
             Close
           </button>
         </div>
+        {showCloseConfirm && (
+          <div className="confirm-overlay">
+            <div className="confirm-dialog">
+              <p className="confirm-message">You have unsaved changes. What would you like to do?</p>
+              <div className="confirm-actions">
+                <button className="button button-compact" onClick={() => setShowCloseConfirm(false)}>
+                  Cancel
+                </button>
+                <button className="button button-compact button-primary" onClick={handleSaveAndClose}>
+                  Save &amp; Close
+                </button>
+                <button
+                  className="button button-compact button-danger"
+                  onClick={() => { handleDiscardChanges(); actions.closeCurrentWindow(); }}
+                >
+                  Discard &amp; Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     );
   }
