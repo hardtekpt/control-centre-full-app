@@ -41,6 +41,7 @@ import type { CreateDdcIpcHandlersDeps, DdcIpcHandlers } from "./ipc/ddcHandlers
 import { createAppIpcHandlers } from "./ipc/appHandlers";
 import { createWindowIpcHandlers } from "./ipc/windowHandlers";
 import { DiscordRpcService } from "./services/discord/service";
+import { OledNotificationService } from "./services/oled/service";
 
 let mainWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
@@ -102,6 +103,7 @@ let cachedPresets: PresetMap = {};
 let backend: ArctisApiService | null = null;
 let ddcService: DdcApiService | null = null;
 const discordRpcService = new DiscordRpcService();
+const oledNotifService = new OledNotificationService();
 const shortcutService = new ShortcutService();
 const presetSwitcherService = new (PresetSwitcherServiceImpl as PresetSwitcherServiceCtor)({
   getCurrentPreset: (channel) => {
@@ -172,6 +174,12 @@ discordRpcService.on("voice-update", () => {
 discordRpcService.on("token-refreshed", (token: string) => {
   settings = { ...settings, discord: { ...settings.discord, accessToken: token } };
   schedulePersist();
+});
+oledNotifService.on("status", (text: string) => {
+  pushServiceLog("oledNotifications", text);
+});
+oledNotifService.on("error", (text: string) => {
+  pushServiceLog("oledNotifications", `ERROR: ${text}`);
 });
 
 let lastStatusText = "ready";
@@ -267,7 +275,8 @@ type RuntimeServiceKey =
   | "notifications"
   | "presetSwitcher"
   | "shortcuts"
-  | "discordRpc";
+  | "discordRpc"
+  | "oledNotifications";
 
 const SERVICE_LOG_LABELS: Record<RuntimeServiceKey, string> = {
   sonarApi: "Sonar GG",
@@ -277,6 +286,7 @@ const SERVICE_LOG_LABELS: Record<RuntimeServiceKey, string> = {
   presetSwitcher: "Auto Preset Switcher",
   shortcuts: "Shortcuts",
   discordRpc: "Discord RPC",
+  oledNotifications: "OLED Notifications",
 };
 
 /**
@@ -409,7 +419,8 @@ type ToggleServiceSettingKey =
   | "ddcEnabled"
   | "notificationsEnabled"
   | "automaticPresetSwitcherEnabled"
-  | "shortcutsEnabled";
+  | "shortcutsEnabled"
+  | "oledDisplayEnabled";
 
 function isServiceEnabled(key: ToggleServiceSettingKey): boolean {
   return settings.services?.[key] !== false;
@@ -519,6 +530,19 @@ function getServiceStatusPayload(): ServiceStatusPayload {
       detail: shortcutsDetail,
     },
     discordRpc: buildDiscordRpcStatus(),
+    oledNotifications: buildOledNotifStatus(),
+  };
+}
+
+function buildOledNotifStatus(): ServiceStatusPayload["oledNotifications"] {
+  const enabled = settings.services?.oledDisplayEnabled === true;
+  if (!enabled) {
+    return { state: "stopped", detail: "Disabled in settings." };
+  }
+  const status = oledNotifService.getRuntimeStatus();
+  return {
+    state: status.state,
+    detail: status.detail,
   };
 }
 
@@ -707,6 +731,10 @@ async function fetchDdcMonitorsIfStale(force = false): Promise<DdcMonitor[]> {
 
 function isNotifEnabled(key: keyof UiSettings["notifications"]): boolean {
   return isServiceEnabled("notificationsEnabled") && settings.notifications?.[key] !== false;
+}
+
+function isOledNotifEnabled(key: keyof UiSettings["oledNotifications"]): boolean {
+  return settings.services?.oledDisplayEnabled === true && settings.oledNotifications?.[key] !== false;
 }
 
 function isHeadsetChatMixEnabled(): boolean {
@@ -3568,11 +3596,20 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
         battery: next.headset_battery_percent,
       });
     }
+    if (isOledNotifEnabled("connectivity")) {
+      const connected = next.connected as boolean;
+      const connLabel = connected ? "Connected" : "Disconnected";
+      oledNotifService.showTypedNotification("connectivity", connLabel, connected ? "Headset online" : "Headset offline");
+    }
   }
 
   if (previous.anc_mode !== next.anc_mode && next.anc_mode != null) {
     if (isNotifEnabled("ancMode")) {
       void showAncModeNotification(next.anc_mode);
+    }
+    if (isOledNotifEnabled("ancMode")) {
+      const ancLabel = next.anc_mode === "anc" ? "ANC On" : next.anc_mode === "transparency" ? "Transparency" : "ANC Off";
+      oledNotifService.showTypedNotification("ancMode", ancLabel, next.anc_mode);
     }
   }
 
@@ -3580,11 +3617,17 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
     if (isNotifEnabled("oled")) {
       void showOledNotification(next.oled_brightness);
     }
+    if (isOledNotifEnabled("oled")) {
+      oledNotifService.showTypedNotification("oled", "OLED Brightness", `${next.oled_brightness}%`, next.oled_brightness);
+    }
   }
 
   if (previous.sidetone_level !== next.sidetone_level && next.sidetone_level != null) {
     if (isNotifEnabled("sidetone")) {
       void showSidetoneNotification(next.sidetone_level);
+    }
+    if (isOledNotifEnabled("sidetone")) {
+      oledNotifService.showTypedNotification("sidetone", "Sidetone", `${next.sidetone_level}%`, next.sidetone_level);
     }
   }
 
@@ -3592,11 +3635,17 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
     if (isNotifEnabled("micMute")) {
       void showMicMuteNotification(next.mic_mute);
     }
+    if (isOledNotifEnabled("micMute")) {
+      oledNotifService.showTypedNotification("micMute", next.mic_mute ? "Mic Muted" : "Mic Live", next.mic_mute ? "Muted" : "Unmuted");
+    }
   }
 
   if (previous.current_usb_input !== next.current_usb_input && next.current_usb_input != null) {
     if (isNotifEnabled("usbInput")) {
       void showUsbInputNotification(next.current_usb_input);
+    }
+    if (isOledNotifEnabled("usbInput")) {
+      oledNotifService.showTypedNotification("usbInput", "USB Input", `Input ${next.current_usb_input}`);
     }
   }
 
@@ -3609,6 +3658,12 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
       volume: volumeChanged ? next.headset_volume_percent : undefined,
       chatMix: chatMixOsdEnabled && chatMixChanged ? next.chat_mix_balance : undefined,
     });
+  }
+  if (isOledNotifEnabled("headsetVolume") && volumeChanged && next.headset_volume_percent != null) {
+    oledNotifService.showTypedNotification("headsetVolume", "Headset Volume", `${next.headset_volume_percent}%`, next.headset_volume_percent);
+  }
+  if (isOledNotifEnabled("headsetChatMix") && chatMixChanged && next.chat_mix_balance != null) {
+    oledNotifService.showTypedNotification("headsetChatMix", "Chat Mix", `${next.chat_mix_balance}%`, next.chat_mix_balance);
   }
 
   if (isNotifEnabled("battery")) {
@@ -3628,6 +3683,15 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
       void showBaseBatteryStatusNotification({ inserted: hasBattery, battery: nextBase });
     }
   }
+  if (isOledNotifEnabled("battery")) {
+    const prevHeadset = previous.headset_battery_percent;
+    const nextHeadset = next.headset_battery_percent;
+    const threshold = clampPercent(settings.batteryLowThreshold);
+    const remainedConnected = previous.connected === true && next.connected === true;
+    if (remainedConnected && prevHeadset != null && nextHeadset != null && prevHeadset >= threshold && nextHeadset < threshold) {
+      oledNotifService.showTypedNotification("battery", "Battery Low", `${nextHeadset}%`, nextHeadset);
+    }
+  }
 
   if (isNotifEnabled("presetChange")) {
     const prevPreset = previous.channel_preset ?? {};
@@ -3637,6 +3701,17 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
       if (nextValue !== prevValue && nextValue != null && String(nextValue).trim()) {
         const presetName = getPresetDisplayName(channel, String(nextValue));
         void showPresetChangeNotification(channel, presetName);
+      }
+    }
+  }
+  if (isOledNotifEnabled("presetChange")) {
+    const prevPreset = previous.channel_preset ?? {};
+    const nextPreset = next.channel_preset ?? {};
+    for (const [channel, nextValue] of Object.entries(nextPreset) as Array<[ChannelKey, string | null | undefined]>) {
+      const prevValue = prevPreset[channel];
+      if (nextValue !== prevValue && nextValue != null && String(nextValue).trim()) {
+        const presetName = getPresetDisplayName(channel, String(nextValue));
+        oledNotifService.showTypedNotification("presetChange", presetName, channel);
       }
     }
   }
@@ -3833,6 +3908,16 @@ function applyRuntimeServiceSettings(previousSettings: UiSettings | null = null)
     accessToken: settings.discord.accessToken,
   });
 
+  oledNotifService.configureRuntime({
+    enabled: settings.services.oledDisplayEnabled === true,
+    timeoutMs: settings.oledNotificationTimeoutMs,
+  });
+  if (settings.services.oledDisplayEnabled === true) {
+    oledNotifService.start();
+  } else {
+    oledNotifService.stop();
+  }
+
   if (!isServiceEnabled("notificationsEnabled")) {
     notificationWindowService.closeAll();
     closeWindowIfOpen(headsetVolumeNotificationWindow);
@@ -3864,6 +3949,7 @@ function applyRuntimeServiceSettings(previousSettings: UiSettings | null = null)
       isServiceEnabled("automaticPresetSwitcherEnabled") ? "started." : "stopped.",
     );
     pushServiceLog("shortcuts", isServiceEnabled("shortcutsEnabled") ? "started." : "stopped.");
+    pushServiceLog("oledNotifications", settings.services.oledDisplayEnabled === true ? "started." : "stopped.");
     return;
   }
 
@@ -3888,6 +3974,9 @@ function applyRuntimeServiceSettings(previousSettings: UiSettings | null = null)
   }
   if (prev.shortcutsEnabled !== next.shortcutsEnabled) {
     pushServiceLog("shortcuts", next.shortcutsEnabled ? "started." : "stopped.");
+  }
+  if (prev.oledDisplayEnabled !== next.oledDisplayEnabled) {
+    pushServiceLog("oledNotifications", next.oledDisplayEnabled ? "started." : "stopped.");
   }
 }
 

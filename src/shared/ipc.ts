@@ -87,6 +87,10 @@ export interface ServiceStatusPayload {
     detail: string;
     channelName: string | null;
   };
+  oledNotifications: {
+    state: ServiceLifecycleState;
+    detail: string;
+  };
 }
 
 export interface DiscordVoiceUserPayload {

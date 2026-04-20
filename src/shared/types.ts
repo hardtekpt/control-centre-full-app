@@ -59,6 +59,8 @@ export interface UiSettings {
   shortcuts: ShortcutBinding[];
   visibleChannels: ChannelKey[];
   notifications: Record<NotificationKey, boolean>;
+  oledNotifications: Record<NotificationKey, boolean>;
+  oledNotificationTimeoutMs: number;
   automaticPresetRules: AutomaticPresetRule[];
   services: {
     sonarApiEnabled: boolean;
@@ -69,6 +71,7 @@ export interface UiSettings {
     shortcutsEnabled: boolean;
     sonarPollIntervalMs: number;
     discordEnabled: boolean;
+    oledDisplayEnabled: boolean;
   };
   discord: {
     clientId: string;

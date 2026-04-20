@@ -74,6 +74,11 @@ export default function AboutSettingsTab({ lastStatus, lastError, serviceStatus,
             detail={serviceStatus.discordRpc.detail}
             meta={serviceStatus.discordRpc.channelName ? `Channel: ${serviceStatus.discordRpc.channelName}` : undefined}
           />
+          <ServiceRow
+            name="OLED Notifications"
+            state={serviceStatus.oledNotifications.state}
+            detail={serviceStatus.oledNotifications.detail}
+          />
         </div>
         <div className="service-row-backend">
           Backend: {lastError ? <span className="error-text">Error — {lastError}</span> : lastStatus}
