@@ -49,10 +49,7 @@ export type OledNotifKind =
 
 interface ActiveNotification {
   kind: OledNotifKind;
-  header: string;
-  title: string;
   valueText: string;
-  valuePercent: number | null;
   animFrameIndex: number;
   expiresAt: number;
 }
@@ -114,22 +111,16 @@ export class OledNotificationService extends EventEmitter {
 
   public showTypedNotification(
     kind: OledNotifKind,
-    title: string,
+    _title: string,
     valueText: string,
-    valuePercent?: number,
+    _valuePercent?: number,
   ): void {
     if (!this.running) {
       return;
     }
     this.active = {
       kind,
-      header: normalizeText(headerForKind(kind), 20),
-      title: normalizeText(title, 14),
-      valueText: normalizeText(valueText, 10),
-      valuePercent:
-        typeof valuePercent === "number" && Number.isFinite(valuePercent)
-          ? clampPercent(valuePercent)
-          : null,
+      valueText: normalizeText(valueText, 16),
       animFrameIndex: 0,
       expiresAt: Date.now() + this.timeoutMs,
     };
@@ -286,54 +277,38 @@ export class OledNotificationService extends EventEmitter {
 
 // ─── Rendering ───────────────────────────────────────────────────────────────
 
-function headerForKind(kind: OledNotifKind): string {
-  const labels: Record<OledNotifKind, string> = {
-    connectivity: "CONNECTION",
-    usbInput: "USB INPUT",
-    ancMode: "ANC MODE",
-    sidetone: "SIDETONE",
-    micMute: "MIC MUTE",
-    headsetChatMix: "CHAT MIX",
-    headsetVolume: "VOLUME",
-    battery: "BATTERY",
-    presetChange: "PRESET",
-    oled: "DISPLAY",
-    appInfo: "INFO",
-    generic: "NOTIFICATION",
-  };
-  return labels[kind] ?? "NOTIFICATION";
-}
-
+/**
+ * Full-screen notification: large 3× scaled icon centred on the 128×64 OLED,
+ * value text centred below it — no border, no header band.
+ *
+ * Layout (all pixel values for 128×64):
+ *   icon  36×36 px  (12×12 source × 3)  top of content block
+ *   gap   6 px
+ *   text  7 px tall (5×7 font)
+ *   total 49 px  →  top margin = ⌊(64−49)/2⌋ = 7 px
+ */
 function renderTypedNotificationBitmap(notif: ActiveNotification): Uint8Array {
-  const W = SCREEN_WIDTH;
-  const H = SCREEN_HEIGHT;
+  const W = SCREEN_WIDTH;   // 128
+  const H = SCREEN_HEIGHT;  // 64
   const pixels = new Uint8Array(W * H);
 
-  // Inverted header band (rows 0–9): white fill, black text.
-  drawRect(pixels, W, H, 0, 0, W, 10, true);
-  drawCenteredTextInverted(pixels, W, H, notif.header, 1);
+  const ICON_SCALE = 3;
+  const ICON_SRC   = 12;                       // source icon size (px)
+  const ICON_SIZE  = ICON_SRC * ICON_SCALE;    // 36
+  const GAP        = 6;
+  const TEXT_H     = FONT_HEIGHT;              // 7
+  const totalH     = ICON_SIZE + GAP + TEXT_H; // 49
 
-  drawHorizontalLine(pixels, W, H, 0, W - 1, 10);
+  const iconY  = Math.floor((H - totalH) / 2);        // 7
+  const iconX  = Math.floor((W - ICON_SIZE) / 2);     // 46
+  const textY  = iconY + ICON_SIZE + GAP;              // 49
 
-  // Icon at (3, 13).
-  drawNotifIcon(pixels, 3, 13, notif.kind);
+  drawNotifIconScaled(pixels, iconX, iconY, notif.kind, ICON_SCALE);
 
-  // Label + value to the right of the icon.
-  const textX = 20;
-  drawText(pixels, W, H, notif.title, textX, 13);
   if (notif.valueText) {
-    drawText(pixels, W, H, notif.valueText, textX, 23);
+    drawCenteredText(pixels, W, H, notif.valueText, textY);
   }
 
-  // Animated progress bar (ease-out over 4 frames).
-  if (notif.valuePercent != null) {
-    const FRAMES = 4;
-    const raw = notif.animFrameIndex >= FRAMES ? 1 : notif.animFrameIndex / FRAMES;
-    const eased = raw < 1 ? raw * (2 - raw) : 1;
-    drawProgressBar(pixels, textX, 36, W - textX - 4, 5, Math.round(notif.valuePercent * eased));
-  }
-
-  drawRectOutline(pixels, W, H, 0, 0, W, H);
   return pixels;
 }
 
@@ -345,87 +320,46 @@ function setPixel(pixels: Uint8Array, w: number, h: number, x: number, y: number
   }
 }
 
-function drawRect(pixels: Uint8Array, w: number, h: number, x: number, y: number, rw: number, rh: number, on: boolean): void {
-  const v = on ? 1 : 0;
-  for (let yy = y; yy < y + rh; yy++) {
-    for (let xx = x; xx < x + rw; xx++) {
-      setPixel(pixels, w, h, xx, yy, v as 0 | 1);
-    }
-  }
-}
-
-function drawRectOutline(pixels: Uint8Array, w: number, h: number, x: number, y: number, rw: number, rh: number): void {
-  drawHorizontalLine(pixels, w, h, x, x + rw - 1, y);
-  drawHorizontalLine(pixels, w, h, x, x + rw - 1, y + rh - 1);
-  for (let yy = y; yy < y + rh; yy++) {
-    setPixel(pixels, w, h, x, yy, 1);
-    setPixel(pixels, w, h, x + rw - 1, yy, 1);
-  }
-}
-
-function drawHorizontalLine(pixels: Uint8Array, w: number, h: number, x0: number, x1: number, y: number): void {
-  for (let xx = x0; xx <= x1; xx++) {
-    setPixel(pixels, w, h, xx, y, 1);
-  }
-}
-
-function drawProgressBar(pixels: Uint8Array, x: number, y: number, bw: number, bh: number, value: number | null): void {
-  drawRectOutline(pixels, SCREEN_WIDTH, SCREEN_HEIGHT, x, y, bw, bh);
-  if (value == null) {
-    for (let px = x + 1; px < x + bw - 1; px += 2) {
-      const py = y + 1 + ((px - x) % Math.max(1, bh - 1));
-      setPixel(pixels, SCREEN_WIDTH, SCREEN_HEIGHT, px, Math.min(y + bh - 2, py), 1);
-    }
-    return;
-  }
-  const fill = Math.round(((bw - 2) * clampPercent(value)) / 100);
-  if (fill > 0) {
-    drawRect(pixels, SCREEN_WIDTH, SCREEN_HEIGHT, x + 1, y + 1, fill, Math.max(1, bh - 2), true);
-  }
-}
-
-function drawGlyph(pixels: Uint8Array, w: number, h: number, x: number, y: number, char: string, invert: boolean): void {
+function drawGlyph(pixels: Uint8Array, w: number, h: number, x: number, y: number, char: string): void {
   const glyph = FONT_5X7[char] ?? FONT_5X7["?"];
   for (let row = 0; row < FONT_HEIGHT; row++) {
     const pattern = glyph[row];
     for (let col = 0; col < FONT_WIDTH; col++) {
       if (pattern[col] === "1") {
-        setPixel(pixels, w, h, x + col, y + row, invert ? 0 : 1);
+        setPixel(pixels, w, h, x + col, y + row, 1);
       }
     }
   }
 }
 
-function drawText(pixels: Uint8Array, w: number, h: number, text: string, x: number, y: number): void {
-  const normalized = normalizeText(text, Math.max(1, Math.floor((w - x) / (FONT_WIDTH + FONT_SPACING))));
-  let cursorX = x;
-  for (const char of normalized) {
-    drawGlyph(pixels, w, h, cursorX, y, char, false);
-    cursorX += FONT_WIDTH + FONT_SPACING;
-  }
-}
-
-function drawCenteredTextInverted(pixels: Uint8Array, w: number, h: number, text: string, y: number): void {
-  const normalized = normalizeText(text, 20);
+/** Renders text centred horizontally at the given y coordinate. */
+function drawCenteredText(pixels: Uint8Array, w: number, h: number, text: string, y: number): void {
+  const maxChars = Math.max(1, Math.floor(w / (FONT_WIDTH + FONT_SPACING)));
+  const normalized = normalizeText(text, maxChars);
   if (!normalized) {
     return;
   }
   const textW = normalized.length * (FONT_WIDTH + FONT_SPACING) - FONT_SPACING;
-  const x = Math.max(2, Math.floor((w - textW) / 2));
-  let cursorX = x;
+  let cursorX = Math.max(0, Math.floor((w - textW) / 2));
   for (const char of normalized) {
-    drawGlyph(pixels, w, h, cursorX, y, char, true);
+    drawGlyph(pixels, w, h, cursorX, y, char);
     cursorX += FONT_WIDTH + FONT_SPACING;
   }
 }
 
-function drawNotifIcon(pixels: Uint8Array, x: number, y: number, kind: OledNotifKind): void {
+/** Draws the 12×12 source icon scaled up by `scale` (nearest-neighbour). */
+function drawNotifIconScaled(pixels: Uint8Array, x: number, y: number, kind: OledNotifKind, scale: number): void {
   const icon = NOTIF_ICONS[kind] ?? NOTIF_ICONS.generic;
   for (let row = 0; row < icon.length; row++) {
     const line = icon[row];
     for (let col = 0; col < line.length; col++) {
-      if (line[col] === "1") {
-        setPixel(pixels, SCREEN_WIDTH, SCREEN_HEIGHT, x + col, y + row, 1);
+      if (line[col] !== "1") {
+        continue;
+      }
+      for (let sy = 0; sy < scale; sy++) {
+        for (let sx = 0; sx < scale; sx++) {
+          setPixel(pixels, SCREEN_WIDTH, SCREEN_HEIGHT, x + col * scale + sx, y + row * scale + sy, 1);
+        }
       }
     }
   }
@@ -471,10 +405,6 @@ function normalizeText(value: string, maxLen: number): string {
     .map((c) => (FONT_5X7[c] ? c : "?"))
     .join("")
     .slice(0, Math.max(1, maxLen));
-}
-
-function clampPercent(v: number): number {
-  return Math.max(0, Math.min(100, Math.round(v)));
 }
 
 function errorText(err: unknown): string {
