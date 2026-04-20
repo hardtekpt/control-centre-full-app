@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { CHANNELS, type ChannelKey, type NotificationKey, type PresetMap, type RunningAppInfo, type ShortcutAction, type ShortcutBinding, type UiSettings } from "@shared/types";
+import { CHANNELS, type ChannelKey, type PresetMap, type RunningAppInfo, type ShortcutAction, type ShortcutBinding, type UiSettings } from "@shared/types";
 import type { DdcMonitor, ServiceStatus } from "../stores/store";
 import AboutSettingsTab from "../components/settings/AboutSettingsTab";
 import AppSettingsTab from "../components/settings/AppSettingsTab";
@@ -7,7 +7,6 @@ import AutomaticPresetsSettingsTab, { type NewPresetRuleDraft } from "../compone
 import DdcSettingsTab from "../components/settings/DdcSettingsTab";
 import DiscordSettingsTab from "../components/settings/DiscordSettingsTab";
 import GgSonarSettingsTab from "../components/settings/GgSonarSettingsTab";
-import NotificationSettingsTab from "../components/settings/NotificationSettingsTab";
 import OledNotificationsSettingsTab from "../components/settings/OledNotificationsSettingsTab";
 import SettingsSidebar from "../components/settings/SettingsSidebar";
 import ShortcutsSettingsTab from "../components/settings/ShortcutsSettingsTab";
@@ -312,14 +311,6 @@ export default function SettingsPage({
     onUpdate({ visibleChannels: next });
   };
 
-  const toggleNotification = (key: NotificationKey, enabled: boolean) => {
-    onUpdate({
-      notifications: {
-        ...settings.notifications,
-        [key]: enabled,
-      },
-    });
-  };
 
   const updateShortcuts = (next: ShortcutBinding[]) => {
     onUpdate({ shortcuts: next });
@@ -539,14 +530,6 @@ export default function SettingsPage({
 
         {tab === "oledNotifications" && (
           <OledNotificationsSettingsTab settings={settings} onUpdate={onUpdate} />
-        )}
-
-        {tab === "notifications" && (
-          <NotificationSettingsTab
-            settings={settings}
-            onUpdate={onUpdate}
-            onToggleNotification={toggleNotification}
-          />
         )}
 
         {tab === "autoPreset" && (
