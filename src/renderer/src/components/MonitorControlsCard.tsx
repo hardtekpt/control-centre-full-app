@@ -7,7 +7,7 @@ import MonitorInlineControl from "./monitor/MonitorInlineControl";
 interface MonitorControlsCardProps {
   ddcMonitors: DdcMonitor[];
   ddcSettings: UiSettings["ddc"];
-  onSetBrightness: (monitorId: number, value: number) => Promise<void>;
+  onSetBrightness: (monitorId: number, value: number) => void;
   onSetInputSource: (monitorId: number, value: string) => void;
 }
 

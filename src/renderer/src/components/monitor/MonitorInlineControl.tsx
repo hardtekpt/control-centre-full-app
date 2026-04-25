@@ -9,7 +9,7 @@ interface MonitorInlineControlProps {
   configuredInputA: string;
   configuredInputB: string;
   inputNameMap: Record<string, string>;
-  onSetBrightness: (monitorId: number, value: number) => Promise<void>;
+  onSetBrightness: (monitorId: number, value: number) => void;
   onSetInputSource: (monitorId: number, value: string) => void;
 }
 
@@ -127,11 +127,14 @@ export default function MonitorInlineControl({
    * overwrites the pending one and the previous write's finally-block is a
    * no-op because `isDraggingRef` will still be false after this call.
    */
-  const fireWrite = async (value: number) => {
+  const fireWrite = (value: number) => {
     const next = Math.max(0, Math.min(100, Math.round(value)));
     isWritingRef.current = true;
+    // Advance the confirmed ref optimistically so the finally block restores
+    // to the newly-written value rather than stale hardware state.
+    latestMonitorBrightness.current = next;
     try {
-      await onSetBrightness(monitor.monitor_id, next);
+      onSetBrightness(monitor.monitor_id, next);
     } finally {
       isWritingRef.current = false;
       // Only restore UI if the user hasn't started a new drag
@@ -147,7 +150,7 @@ export default function MonitorInlineControl({
   /** Called on mouseup / touchend / keyup — ends drag and commits the value. */
   const commitBrightness = () => {
     isDraggingRef.current = false;
-    void fireWrite(draftBrightnessRef.current);
+    fireWrite(draftBrightnessRef.current);
   };
 
   const toggleInput = () => {
