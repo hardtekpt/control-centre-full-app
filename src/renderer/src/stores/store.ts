@@ -335,23 +335,33 @@ export function useBridgeState() {
         }));
         await window.arctisBridge.setMixerAppMute(appId, muted);
       },
-      setDdcBrightness: async (monitorId: number, value: number) => {
-        const result = await window.arctisBridge.setDdcBrightness(monitorId, value);
-        if (result.ok && result.monitor) {
-          upsertDdcMonitor(result.monitor);
-          setDdcError(null);
-          return;
-        }
-        setDdcError(result.error ?? "Unable to set monitor brightness.");
+      setDdcBrightness: (monitorId: number, value: number) => {
+        let prevMonitors: DdcMonitorPayload[] = [];
+        setDdcMonitors((prev) => {
+          prevMonitors = prev;
+          return prev.map((m) => m.monitor_id === monitorId ? { ...m, brightness: value } : m);
+        });
+        setDdcError(null);
+        window.arctisBridge.setDdcBrightness(monitorId, value).then((result) => {
+          if (!result.ok) {
+            setDdcMonitors(prevMonitors);
+            setDdcError(result.error ?? "Unable to set monitor brightness.");
+          }
+        });
       },
-      setDdcInputSource: async (monitorId: number, value: string) => {
-        const result = await window.arctisBridge.setDdcInputSource(monitorId, value);
-        if (result.ok && result.monitor) {
-          upsertDdcMonitor(result.monitor);
-          setDdcError(null);
-          return;
-        }
-        setDdcError(result.error ?? "Unable to set monitor input source.");
+      setDdcInputSource: (monitorId: number, value: string) => {
+        let prevMonitors: DdcMonitorPayload[] = [];
+        setDdcMonitors((prev) => {
+          prevMonitors = prev;
+          return prev.map((m) => m.monitor_id === monitorId ? { ...m, input_source: value } : m);
+        });
+        setDdcError(null);
+        window.arctisBridge.setDdcInputSource(monitorId, value).then((result) => {
+          if (!result.ok) {
+            setDdcMonitors(prevMonitors);
+            setDdcError(result.error ?? "Unable to set monitor input source.");
+          }
+        });
       },
       persistSettings,
       setDiscordUserVolume: async (userId: string, volume: number) => {

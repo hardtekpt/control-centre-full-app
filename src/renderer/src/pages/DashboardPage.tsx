@@ -24,7 +24,7 @@ interface DashboardPageProps {
   onSetMixerOutput: (outputId: string) => void;
   onSetMixerAppVolume: (appId: string, value: number) => void;
   onSetMixerAppMute: (appId: string, muted: boolean) => void;
-  onSetDdcBrightness: (monitorId: number, value: number) => Promise<void>;
+  onSetDdcBrightness: (monitorId: number, value: number) => void;
   onSetDdcInputSource: (monitorId: number, value: string) => void;
   discordEnabled: boolean;
   discordVoiceState: DiscordVoiceStatePayload;
