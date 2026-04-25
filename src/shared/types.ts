@@ -70,6 +70,7 @@ export interface UiSettings {
     automaticPresetSwitcherEnabled: boolean;
     shortcutsEnabled: boolean;
     sonarPollIntervalMs: number;
+    presetSwitcherPollIntervalMs: number;
     discordEnabled: boolean;
     oledDisplayEnabled: boolean;
   };

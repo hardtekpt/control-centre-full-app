@@ -141,13 +141,9 @@ const presetSwitcherService = new (PresetSwitcherServiceImpl as PresetSwitcherSe
     }
   },
   onActiveAppUpdate: (activeApp) => {
-    if (activeApp) {
-      pushServiceLog("presetSwitcher", `Active app: ${activeApp.name}`);
-    }
+    pushServiceLog("presetSwitcher", activeApp ? `Active app: ${activeApp.name}` : "No active window.");
   },
-  onLog: (message) => {
-    pushServiceLog("presetSwitcher", message);
-  },
+  pollIntervalMs: settings.services.presetSwitcherPollIntervalMs,
 });
 discordRpcService.on("status", (text: string) => {
   pushServiceLog("discordRpc", text);
@@ -3890,6 +3886,7 @@ function applyRuntimeServiceSettings(previousSettings: UiSettings | null = null)
     }
   }
 
+  presetSwitcherService.configureRuntime({ pollIntervalMs: settings.services.presetSwitcherPollIntervalMs });
   if (isServiceEnabled("automaticPresetSwitcherEnabled")) {
     presetSwitcherService.start();
   } else {
@@ -3946,7 +3943,9 @@ function applyRuntimeServiceSettings(previousSettings: UiSettings | null = null)
     pushServiceLog("notifications", isServiceEnabled("notificationsEnabled") ? "started." : "stopped.");
     pushServiceLog(
       "presetSwitcher",
-      isServiceEnabled("automaticPresetSwitcherEnabled") ? "started." : "stopped.",
+      isServiceEnabled("automaticPresetSwitcherEnabled")
+        ? `started (poll: ${settings.services.presetSwitcherPollIntervalMs}ms).`
+        : "stopped.",
     );
     pushServiceLog("shortcuts", isServiceEnabled("shortcutsEnabled") ? "started." : "stopped.");
     pushServiceLog("oledNotifications", settings.services.oledDisplayEnabled === true ? "started." : "stopped.");
@@ -3969,8 +3968,10 @@ function applyRuntimeServiceSettings(previousSettings: UiSettings | null = null)
   if (prev.notificationsEnabled !== next.notificationsEnabled) {
     pushServiceLog("notifications", next.notificationsEnabled ? "started." : "stopped.");
   }
-  if (prev.automaticPresetSwitcherEnabled !== next.automaticPresetSwitcherEnabled) {
-    pushServiceLog("presetSwitcher", next.automaticPresetSwitcherEnabled ? "started." : "stopped.");
+  if (prev.automaticPresetSwitcherEnabled !== next.automaticPresetSwitcherEnabled || prev.presetSwitcherPollIntervalMs !== next.presetSwitcherPollIntervalMs) {
+    const status = next.automaticPresetSwitcherEnabled ? "started" : "stopped";
+    const poll = `poll: ${next.presetSwitcherPollIntervalMs}ms`;
+    pushServiceLog("presetSwitcher", `${status} (${poll}).`);
   }
   if (prev.shortcutsEnabled !== next.shortcutsEnabled) {
     pushServiceLog("shortcuts", next.shortcutsEnabled ? "started." : "stopped.");

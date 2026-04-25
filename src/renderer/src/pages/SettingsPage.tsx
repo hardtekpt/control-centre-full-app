@@ -574,6 +574,7 @@ export default function SettingsPage({
             appSelectLabel={appSelectLabel}
             isKnownApp={isKnownApp}
             availablePresetRows={availablePresetRows}
+            onUpdate={onUpdate}
             onPatchRule={patchAutomaticPresetRule}
             onRemoveRule={removeAutomaticPresetRule}
             newPresetRule={newPresetRule}
