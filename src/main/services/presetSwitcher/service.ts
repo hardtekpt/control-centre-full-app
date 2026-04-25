@@ -262,6 +262,18 @@ $apps | ConvertTo-Json -Depth 3 -Compress
     this.config.onAppsUpdate(this.openApps);
   }
 
+  public configureRuntime(config: { pollIntervalMs?: number }): void {
+    if (config.pollIntervalMs == null || config.pollIntervalMs === this.pollIntervalMs) {
+      return;
+    }
+    this.pollIntervalMs = config.pollIntervalMs;
+    this.openAppsPollIntervalMs = Math.max(2_000, this.pollIntervalMs * 10);
+    if (this.pollTimer) {
+      this.stop();
+      this.start();
+    }
+  }
+
   public async refreshNow(): Promise<void> {
     await this.pollOnce();
   }
