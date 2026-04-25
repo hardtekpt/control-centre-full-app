@@ -111,13 +111,14 @@ export class OledNotificationService extends EventEmitter {
 
   public showTypedNotification(
     kind: OledNotifKind,
-    _title: string,
+    title: string,
     valueText: string,
     _valuePercent?: number,
   ): void {
     if (!this.running) {
       return;
     }
+    this.emit("status", `[${kind}] "${title}" — OLED notification sent (value="${valueText}")`);
     this.active = {
       kind,
       valueText: normalizeText(valueText, 16),
