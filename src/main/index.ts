@@ -190,6 +190,7 @@ let mainWindowLoaded = false;
 let pendingFlyoutOpen = false;
 let isQuitting = false;
 let hasSeenLiveState = false;
+let liveConnectedBaseline: boolean | null = null;
 let ddcLastFailure = "";
 let ddcLastStatus: "unknown" | "ok" | "error" = "unknown";
 let ddcMonitorsCache: DdcMonitor[] = [];
@@ -3582,7 +3583,18 @@ function getPresetDisplayName(channel: ChannelKey, presetId: string): string {
 }
 
 function notifyStateChanges(previous: AppState, next: AppState): void {
-  const connectivityChanged = previous.connected !== next.connected && next.connected != null;
+  // Compare against a live-event baseline rather than previous cached state.
+  // Persisted "connected: true" from a prior session must not suppress the notification
+  // when the headset physically connects after app restart with the headset off.
+  // The first live HID connectivity value silently sets the baseline; subsequent
+  // changes fire notifications.
+  let connectivityChanged = false;
+  if (next.connected != null) {
+    if (liveConnectedBaseline !== null) {
+      connectivityChanged = liveConnectedBaseline !== next.connected;
+    }
+    liveConnectedBaseline = next.connected;
+  }
   if (connectivityChanged) {
     const connLabel = next.connected ? "Connected" : "Disconnected";
     const connDetail = `connected=${next.connected} wireless=${next.wireless} bluetooth=${next.bluetooth} battery=${next.headset_battery_percent ?? "?"}%`;
