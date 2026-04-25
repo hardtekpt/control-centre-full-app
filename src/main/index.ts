@@ -1309,8 +1309,8 @@ async function showHeadsetVolumeNotification(update: HeadsetAudioNotificationUpd
     maxHeight: nextLayout.height,
     show: false,
     frame: false,
-    transparent: false,
-    backgroundColor: palette.panelBg,
+    transparent: true,
+    backgroundColor: "#00000000",
     resizable: false,
     movable: false,
     minimizable: false,
@@ -1319,7 +1319,7 @@ async function showHeadsetVolumeNotification(update: HeadsetAudioNotificationUpd
     skipTaskbar: true,
     alwaysOnTop: true,
     focusable: false,
-    hasShadow: true,
+    hasShadow: false,
   });
 
   headsetVolumeNotificationWindow = win;
@@ -3588,7 +3588,10 @@ function getPresetDisplayName(channel: ChannelKey, presetId: string): string {
 function notifyStateChanges(previous: AppState, next: AppState): void {
   const connectivityChanged = previous.connected !== next.connected && next.connected != null;
   if (connectivityChanged) {
+    const connLabel = next.connected ? "Connected" : "Disconnected";
+    const connDetail = `connected=${next.connected} wireless=${next.wireless} bluetooth=${next.bluetooth} battery=${next.headset_battery_percent ?? "?"}%`;
     if (isNotifEnabled("connectivity")) {
+      pushServiceLog("notifications", `[connectivity] ${connLabel} — OSD sent (${connDetail})`);
       void showConnectivityNotification({
         connected: next.connected as boolean,
         wireless: Boolean(next.wireless),
@@ -3597,18 +3600,23 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
       });
     }
     if (isOledNotifEnabled("connectivity")) {
-      const connected = next.connected as boolean;
-      const connLabel = connected ? "Connected" : "Disconnected";
-      oledNotifService.showTypedNotification("connectivity", connLabel, connected ? "Headset online" : "Headset offline");
+      pushServiceLog("notifications", `[connectivity] ${connLabel} — OLED sent (${connDetail})`);
+      oledNotifService.showTypedNotification("connectivity", connLabel, next.connected ? "Headset online" : "Headset offline");
     }
   }
 
-  if (previous.anc_mode !== next.anc_mode && next.anc_mode != null) {
+  // Suppress the ANC notification when it is a side-effect of a wireless connect event:
+  // the firmware forces anc_mode "off" in the same HID patch as connected=true, so showing
+  // both would immediately overwrite the connectivity notification on the OLED.
+  const ancModeChangedByUser = previous.anc_mode !== next.anc_mode && next.anc_mode != null && !(connectivityChanged && next.connected === true);
+  if (ancModeChangedByUser) {
+    const ancLabel = next.anc_mode === "anc" ? "ANC On" : next.anc_mode === "transparency" ? "Transparency" : "ANC Off";
     if (isNotifEnabled("ancMode")) {
+      pushServiceLog("notifications", `[ancMode] ${ancLabel} — OSD sent (mode=${next.anc_mode})`);
       void showAncModeNotification(next.anc_mode);
     }
     if (isOledNotifEnabled("ancMode")) {
-      const ancLabel = next.anc_mode === "anc" ? "ANC On" : next.anc_mode === "transparency" ? "Transparency" : "ANC Off";
+      pushServiceLog("notifications", `[ancMode] ${ancLabel} — OLED sent (mode=${next.anc_mode})`);
       oledNotifService.showTypedNotification("ancMode", ancLabel, next.anc_mode);
     }
   }
@@ -3624,27 +3632,34 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
 
   if (previous.sidetone_level !== next.sidetone_level && next.sidetone_level != null) {
     if (isNotifEnabled("sidetone")) {
+      pushServiceLog("notifications", `[sidetone] level=${next.sidetone_level}% — OSD sent`);
       void showSidetoneNotification(next.sidetone_level);
     }
     if (isOledNotifEnabled("sidetone")) {
+      pushServiceLog("notifications", `[sidetone] level=${next.sidetone_level}% — OLED sent`);
       oledNotifService.showTypedNotification("sidetone", "Sidetone", `${next.sidetone_level}%`, next.sidetone_level);
     }
   }
 
   if (previous.mic_mute !== next.mic_mute && next.mic_mute != null) {
+    const muteLabel = next.mic_mute ? "Muted" : "Unmuted";
     if (isNotifEnabled("micMute")) {
+      pushServiceLog("notifications", `[micMute] ${muteLabel} — OSD sent`);
       void showMicMuteNotification(next.mic_mute);
     }
     if (isOledNotifEnabled("micMute")) {
-      oledNotifService.showTypedNotification("micMute", next.mic_mute ? "Mic Muted" : "Mic Live", next.mic_mute ? "Muted" : "Unmuted");
+      pushServiceLog("notifications", `[micMute] ${muteLabel} — OLED sent`);
+      oledNotifService.showTypedNotification("micMute", next.mic_mute ? "Mic Muted" : "Mic Live", muteLabel);
     }
   }
 
   if (previous.current_usb_input !== next.current_usb_input && next.current_usb_input != null) {
     if (isNotifEnabled("usbInput")) {
+      pushServiceLog("notifications", `[usbInput] input=${next.current_usb_input} — OSD sent`);
       void showUsbInputNotification(next.current_usb_input);
     }
     if (isOledNotifEnabled("usbInput")) {
+      pushServiceLog("notifications", `[usbInput] input=${next.current_usb_input} — OLED sent`);
       oledNotifService.showTypedNotification("usbInput", "USB Input", `Input ${next.current_usb_input}`);
     }
   }
@@ -3654,15 +3669,21 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
   const chatMixOsdEnabled = isHeadsetChatMixEnabled();
   const shouldTriggerHeadsetOsd = volumeChanged || (chatMixOsdEnabled && chatMixChanged);
   if (isNotifEnabled("headsetVolume") && shouldTriggerHeadsetOsd) {
+    const parts: string[] = [];
+    if (volumeChanged) parts.push(`volume=${next.headset_volume_percent ?? "?"}%`);
+    if (chatMixOsdEnabled && chatMixChanged) parts.push(`chatMix=${next.chat_mix_balance ?? "?"}%`);
+    pushServiceLog("notifications", `[headsetVolume] ${parts.join(" ")} — OSD sent`);
     void showHeadsetVolumeNotification({
       volume: volumeChanged ? next.headset_volume_percent : undefined,
       chatMix: chatMixOsdEnabled && chatMixChanged ? next.chat_mix_balance : undefined,
     });
   }
   if (isOledNotifEnabled("headsetVolume") && volumeChanged && next.headset_volume_percent != null) {
+    pushServiceLog("notifications", `[headsetVolume] volume=${next.headset_volume_percent}% — OLED sent`);
     oledNotifService.showTypedNotification("headsetVolume", "Headset Volume", `${next.headset_volume_percent}%`, next.headset_volume_percent);
   }
   if (isOledNotifEnabled("headsetChatMix") && chatMixChanged && next.chat_mix_balance != null) {
+    pushServiceLog("notifications", `[headsetChatMix] chatMix=${next.chat_mix_balance}% — OLED sent`);
     oledNotifService.showTypedNotification("headsetChatMix", "Chat Mix", `${next.chat_mix_balance}%`, next.chat_mix_balance);
   }
 
@@ -3672,6 +3693,7 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
     const threshold = clampPercent(settings.batteryLowThreshold);
     const remainedConnected = previous.connected === true && next.connected === true;
     if (remainedConnected && prevHeadset != null && nextHeadset != null && prevHeadset >= threshold && nextHeadset < threshold) {
+      pushServiceLog("notifications", `[battery] low threshold crossed: ${prevHeadset}% → ${nextHeadset}% (threshold=${threshold}%) — OSD sent`);
       void showBatteryLowNotification({ battery: nextHeadset, threshold });
     }
     const prevBase = toNullablePercent(previous.base_battery_percent);
@@ -3680,6 +3702,7 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
     const hadBattery = prevBase != null && prevBase > 0;
     const hasBattery = nextBase != null && nextBase > 0;
     if (hadBattery !== hasBattery) {
+      pushServiceLog("notifications", `[battery] base battery ${hasBattery ? "inserted" : "removed"} (${nextBase ?? "?"}%) — OSD sent`);
       void showBaseBatteryStatusNotification({ inserted: hasBattery, battery: nextBase });
     }
   }
@@ -3689,6 +3712,7 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
     const threshold = clampPercent(settings.batteryLowThreshold);
     const remainedConnected = previous.connected === true && next.connected === true;
     if (remainedConnected && prevHeadset != null && nextHeadset != null && prevHeadset >= threshold && nextHeadset < threshold) {
+      pushServiceLog("notifications", `[battery] low threshold crossed: ${prevHeadset}% → ${nextHeadset}% (threshold=${threshold}%) — OLED sent`);
       oledNotifService.showTypedNotification("battery", "Battery Low", `${nextHeadset}%`, nextHeadset);
     }
   }
@@ -3700,6 +3724,7 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
       const prevValue = prevPreset[channel];
       if (nextValue !== prevValue && nextValue != null && String(nextValue).trim()) {
         const presetName = getPresetDisplayName(channel, String(nextValue));
+        pushServiceLog("notifications", `[presetChange] channel=${channel} preset="${presetName}" — OSD sent`);
         void showPresetChangeNotification(channel, presetName);
       }
     }
@@ -3711,6 +3736,7 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
       const prevValue = prevPreset[channel];
       if (nextValue !== prevValue && nextValue != null && String(nextValue).trim()) {
         const presetName = getPresetDisplayName(channel, String(nextValue));
+        pushServiceLog("notifications", `[presetChange] channel=${channel} preset="${presetName}" — OLED sent`);
         oledNotifService.showTypedNotification("presetChange", presetName, channel);
       }
     }
