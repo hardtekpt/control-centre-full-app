@@ -64,22 +64,33 @@ export default function HidSettingsTab() {
   const [events, setEvents] = useState<HidRawEvent[]>([]);
   const [devices, setDevices] = useState<HidDeviceEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const autoScrollRef = useRef(true);
+  // Tracks the timestamp of the last clear so that historical events from the
+  // getHidInfo() promise (which may resolve after a clear) and live events that
+  // arrived before the clear can both be filtered out correctly.
+  const clearedAtRef = useRef(0);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    let cancelled = false;
     void window.arctisBridge.getHidInfo().then((info: HidInfoPayload) => {
+      if (cancelled) return;
       setDevices(info.devices);
-      setEvents(info.recentEvents);
+      setEvents(info.recentEvents.filter((e) => e.timestamp > clearedAtRef.current));
       setLoading(false);
     });
     const unsub = window.arctisBridge.onHidEvent((event: HidRawEvent) => {
+      if (cancelled) return;
+      if (event.timestamp <= clearedAtRef.current) return;
       setEvents((prev) => [event, ...prev].slice(0, 200));
     });
-    return unsub;
+    return () => {
+      cancelled = true;
+      unsub();
+    };
   }, []);
 
   function handleClear() {
+    clearedAtRef.current = Date.now();
     setEvents([]);
   }
 
