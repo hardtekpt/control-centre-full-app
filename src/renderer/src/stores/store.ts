@@ -336,32 +336,14 @@ export function useBridgeState() {
         await window.arctisBridge.setMixerAppMute(appId, muted);
       },
       setDdcBrightness: (monitorId: number, value: number) => {
-        let prevMonitors: DdcMonitorPayload[] = [];
-        setDdcMonitors((prev) => {
-          prevMonitors = prev;
-          return prev.map((m) => m.monitor_id === monitorId ? { ...m, brightness: value } : m);
-        });
+        setDdcMonitors((prev) => prev.map((m) => m.monitor_id === monitorId ? { ...m, brightness: value } : m));
         setDdcError(null);
-        window.arctisBridge.setDdcBrightness(monitorId, value).then((result) => {
-          if (!result.ok) {
-            setDdcMonitors(prevMonitors);
-            setDdcError(result.error ?? "Unable to set monitor brightness.");
-          }
-        });
+        void window.arctisBridge.setDdcBrightness(monitorId, value);
       },
       setDdcInputSource: (monitorId: number, value: string) => {
-        let prevMonitors: DdcMonitorPayload[] = [];
-        setDdcMonitors((prev) => {
-          prevMonitors = prev;
-          return prev.map((m) => m.monitor_id === monitorId ? { ...m, input_source: value } : m);
-        });
+        setDdcMonitors((prev) => prev.map((m) => m.monitor_id === monitorId ? { ...m, input_source: value } : m));
         setDdcError(null);
-        window.arctisBridge.setDdcInputSource(monitorId, value).then((result) => {
-          if (!result.ok) {
-            setDdcMonitors(prevMonitors);
-            setDdcError(result.error ?? "Unable to set monitor input source.");
-          }
-        });
+        void window.arctisBridge.setDdcInputSource(monitorId, value);
       },
       persistSettings,
       setDiscordUserVolume: async (userId: string, volume: number) => {
