@@ -5,6 +5,64 @@ interface DdcServiceLike {
   setInputSource(monitorId: number, value: string): unknown;
 }
 
+type DdcQueueCommand =
+  | { kind: "brightness"; monitorId: number; value: number }
+  | { kind: "input"; monitorId: number; value: string };
+
+/**
+ * Serial command queue for DDC hardware writes.
+ *
+ * DDC/CI calls are synchronous and block the Node event loop for ~200–400 ms.
+ * By deferring each command to the next event-loop iteration via setImmediate,
+ * we allow other IPC messages to be processed before (and between) writes,
+ * keeping the renderer responsive while commands drain in order.
+ *
+ * Brightness commands for the same monitor are coalesced: only the most-recent
+ * value is kept in the queue, so a burst of rapid slider commits sends exactly
+ * one hardware write per monitor.
+ */
+function createDdcQueue(execute: (cmd: DdcQueueCommand) => void): { enqueue(cmd: DdcQueueCommand): void } {
+  const pending: DdcQueueCommand[] = [];
+  let scheduled = false;
+
+  function flush(): void {
+    const cmd = pending.shift();
+    if (!cmd) {
+      scheduled = false;
+      return;
+    }
+    try {
+      execute(cmd);
+    } catch {
+      // errors are logged inside execute
+    }
+    if (pending.length > 0) {
+      setImmediate(flush);
+    } else {
+      scheduled = false;
+    }
+  }
+
+  return {
+    enqueue(cmd: DdcQueueCommand): void {
+      if (cmd.kind === "brightness") {
+        for (let i = pending.length - 1; i >= 0; i--) {
+          const item = pending[i];
+          if (item.kind === "brightness" && item.monitorId === cmd.monitorId) {
+            pending.splice(i, 1);
+            break;
+          }
+        }
+      }
+      pending.push(cmd);
+      if (!scheduled) {
+        scheduled = true;
+        setImmediate(flush);
+      }
+    },
+  };
+}
+
 export interface CreateDdcIpcHandlersDeps {
   fetchDdcMonitorsIfStale: (force?: boolean) => Promise<DdcMonitorPayload[]>;
   getDdcService: () => DdcServiceLike | null;
@@ -91,6 +149,24 @@ export function createDdcIpcHandlers(deps: CreateDdcIpcHandlersDeps): DdcIpcHand
     }
   }
 
+  const queue = createDdcQueue((cmd) => {
+    if (cmd.kind === "brightness") {
+      void mutateDdcMonitor(
+        cmd.monitorId,
+        "ddc:set-brightness",
+        (svc) => svc.setBrightness(cmd.monitorId, cmd.value),
+        `DDC: monitor ${cmd.monitorId} brightness set to ${cmd.value}.`,
+      );
+    } else {
+      void mutateDdcMonitor(
+        cmd.monitorId,
+        "ddc:set-input-source",
+        (svc) => svc.setInputSource(cmd.monitorId, cmd.value),
+        `DDC: monitor ${cmd.monitorId} input set to ${cmd.value}.`,
+      );
+    }
+  });
+
   return {
     getDdcMonitors: async () => {
       debugDdc("ipc ddc:get-monitors begin");
@@ -114,35 +190,27 @@ export function createDdcIpcHandlers(deps: CreateDdcIpcHandlersDeps): DdcIpcHand
         return { ok: false, monitors: [], error: detail, updatedAt: getMonitorsCacheTs() || null };
       }
     },
-    setDdcBrightness: async (payload) => {
+    setDdcBrightness: (payload): Promise<DdcMutateMonitorResponse> => {
       const monitorId = Number(payload?.monitorId);
       const value = clampPercent(Number(payload?.value));
-      debugDdc(`ipc ddc:set-brightness begin monitor=${monitorId} value=${value}`);
+      debugDdc(`ipc ddc:set-brightness enqueue monitor=${monitorId} value=${value}`);
       if (!Number.isFinite(monitorId) || monitorId < 1) {
         debugDdc("ipc ddc:set-brightness rejected invalid monitor id");
-        return { ok: false, error: "Invalid monitor id." };
+        return Promise.resolve({ ok: false, error: "Invalid monitor id." });
       }
-      return mutateDdcMonitor(
-        monitorId,
-        "ddc:set-brightness",
-        (svc) => svc.setBrightness(monitorId, value),
-        `DDC: monitor ${monitorId} brightness set to ${value}.`,
-      );
+      queue.enqueue({ kind: "brightness", monitorId, value });
+      return Promise.resolve({ ok: true });
     },
-    setDdcInputSource: async (payload) => {
+    setDdcInputSource: (payload): Promise<DdcMutateMonitorResponse> => {
       const monitorId = Number(payload?.monitorId);
       const value = String(payload?.value ?? "").trim();
-      debugDdc(`ipc ddc:set-input-source begin monitor=${monitorId} value=${value}`);
+      debugDdc(`ipc ddc:set-input-source enqueue monitor=${monitorId} value=${value}`);
       if (!Number.isFinite(monitorId) || monitorId < 1 || !value) {
         debugDdc("ipc ddc:set-input-source rejected invalid payload");
-        return { ok: false, error: "Invalid monitor id or input value." };
+        return Promise.resolve({ ok: false, error: "Invalid monitor id or input value." });
       }
-      return mutateDdcMonitor(
-        monitorId,
-        "ddc:set-input-source",
-        (svc) => svc.setInputSource(monitorId, value),
-        `DDC: monitor ${monitorId} input set to ${value}.`,
-      );
+      queue.enqueue({ kind: "input", monitorId, value });
+      return Promise.resolve({ ok: true });
     },
   };
 }
