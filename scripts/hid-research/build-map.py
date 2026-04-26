@@ -135,59 +135,188 @@ BASELINE_EVENTS: list[dict] = [
     },
 ]
 
-# ── Baseline: Nova 7X write commands (candidates for Nova Pro) ────────────────
-NOVA7X_CANDIDATES: list[dict] = [
+# ── HeadsetControl CONFIRMED write commands for Nova Pro Wireless ─────────────
+# Source: github.com/Sapd/HeadsetControl blob/master/lib/devices/steelseries_arctis_nova_pro_wireless.hpp
+# PIDs confirmed: 0x12e0 (Nova Pro Wireless), 0x12e5 (Nova Pro Wireless X)
+# All commands: report_id=0x06, native packet size=31 bytes.
+HEADSETCONTROL_CONFIRMED: list[dict] = [
     {
-        "type": "write_candidate",
-        "source": "Nova 7X confirmed",
-        "name": "mic_volume",
-        "command": "0x37",
-        "packet": "[0x00, 0x37, level, 0x00…]",
-        "values": {"range": "0–7"},
-        "write_confirmed": False,
+        "type": "write_confirmed",
+        "source": "HeadsetControl (nova_pro_wireless.hpp) — authoritative",
+        "name": "sidetone",
+        "command": "0x39",
+        "report_id": "0x06",
+        "packet": "[0x06, 0x39, level, 0x00…×28]",
+        "packet_size_native": 31,
+        "values": {
+            "0": "off",
+            "1": "low  (input ≤42 on 0–128 scale)",
+            "2": "medium (input ≤85 on 0–128 scale)",
+            "3": "high  (input >85 on 0–128 scale)",
+        },
+        "notes": "Same opcode as push event 0x39 — write triggers matching push response.",
+        "write_confirmed": True,
     },
     {
-        "type": "write_candidate",
-        "source": "Nova 7X confirmed",
-        "name": "volume_limiter",
-        "command": "0x3A",
-        "packet": "[0x00, 0x3A, value, 0x00…]",
-        "values": {"0": "off", "1": "on"},
-        "write_confirmed": False,
+        "type": "write_confirmed",
+        "source": "HeadsetControl (nova_pro_wireless.hpp) — authoritative",
+        "name": "oled_lights",
+        "command": "0xBF",
+        "report_id": "0x06",
+        "packet": "[0x06, 0xBF, strength, 0x00…×28]",
+        "packet_size_native": 31,
+        "values": {"range": "1–10 (maps boolean on/off to LED strength)"},
+        "notes": "Write opcode is 0xBF. Push event uses 0x85. These are DIFFERENT opcodes.",
+        "write_confirmed": True,
     },
     {
-        "type": "write_candidate",
-        "source": "Nova 7X confirmed",
+        "type": "write_confirmed",
+        "source": "HeadsetControl (nova_pro_wireless.hpp) — authoritative",
         "name": "idle_timeout",
-        "command": "0xA3",
-        "packet": "[0x00, 0xA3, minutes, 0x00…]",
-        "values": {"range": "0–90 (0=disabled)"},
-        "write_confirmed": False,
+        "command": "0xC1",
+        "report_id": "0x06",
+        "packet": "[0x06, 0xC1, level, 0x00…×28]",
+        "packet_size_native": 31,
+        "values": {
+            "0": "disabled",
+            "1": "1 minute",
+            "2": "5 minutes",
+            "3": "10 minutes",
+            "4": "15 minutes",
+            "5": "30 minutes",
+            "6": "60 minutes",
+        },
+        "notes": "Value is a level INDEX (0–6), not minutes directly. Nova 7X used 0xA3 — different.",
+        "write_confirmed": True,
     },
     {
-        "type": "write_candidate",
-        "source": "Nova 7X confirmed",
-        "name": "eq_set_params",
+        "type": "write_confirmed",
+        "source": "HeadsetControl (nova_pro_wireless.hpp) — authoritative",
+        "name": "eq_preset_select",
+        "command": "0x2E",
+        "report_id": "0x06",
+        "packet": "[0x06, 0x2E, preset, 0x00…×28]",
+        "packet_size_native": 31,
+        "values": {
+            "0": "preset 1",
+            "1": "preset 2",
+            "2": "preset 3",
+            "3": "preset 4",
+            "4": "custom (required before writing eq_bands)",
+        },
+        "write_confirmed": True,
+    },
+    {
+        "type": "write_confirmed",
+        "source": "HeadsetControl (nova_pro_wireless.hpp) — authoritative",
+        "name": "eq_bands",
         "command": "0x33",
-        "packet": "[0x00, 0x33, profile, 0x20, 0x00, 0x01, 0x00, 0x86, 0x05, <10-band data>…]",
-        "values": {"profile": "0x00=2.4GHz, 0x01=Bluetooth"},
-        "write_confirmed": False,
+        "report_id": "0x06",
+        "packet": "[0x06, 0x33, band0, band1, …band9, 0x00…]",
+        "packet_size_native": 31,
+        "values": {
+            "formula": "band_byte = 0x14 + (2 * gain_dB)",
+            "baseline": "0x14 = 0 dB (flat)",
+            "range_dB": "-10.0 to +10.0",
+            "step_dB": "0.5",
+            "num_bands": 10,
+            "example": "+4 dB = 0x1C, -6 dB = 0x08",
+        },
+        "notes": "Must call eq_preset_select with preset=4 (custom) before writing bands.",
+        "write_confirmed": True,
     },
     {
-        "type": "write_candidate",
-        "source": "Nova 7X confirmed",
-        "name": "eq_apply",
-        "command": "0x27",
-        "packet": "[0x00, 0x27, profile, 0x00…]",
-        "write_confirmed": False,
-    },
-    {
-        "type": "write_candidate",
-        "source": "Nova 7X confirmed",
-        "name": "eq_save_flash",
+        "type": "write_confirmed",
+        "source": "HeadsetControl (nova_pro_wireless.hpp) — authoritative",
+        "name": "save_to_flash",
         "command": "0x09",
-        "packet": "[0x00, 0x09, 0x00…]",
-        "write_confirmed": False,
+        "report_id": "0x06",
+        "packet": "[0x06, 0x09, 0x00…×29]",
+        "packet_size_native": 31,
+        "values": {},
+        "notes": "Persists current settings to device flash. Send after eq_bands or settings writes.",
+        "write_confirmed": True,
+    },
+]
+
+# ── Read query confirmed by HeadsetControl ────────────────────────────────────
+HEADSETCONTROL_READ_QUERIES: list[dict] = [
+    {
+        "type": "read_query_confirmed",
+        "source": "HeadsetControl (nova_pro_wireless.hpp) — authoritative",
+        "name": "battery_status",
+        "command": "0xB0",
+        "report_id": "0x06",
+        "packet": "[0x06, 0xB0, 0x00…×29]",
+        "response_fields": {
+            "byte_6": "headset battery level (0–8, map to 0–100%)",
+            "byte_15": "status (0x01=offline/disconnected, 0x02=charging, 0x08=online/discharging)",
+        },
+        "notes": "Only headset battery is documented. Dual battery (base station) not in HeadsetControl.",
+    },
+]
+
+# ── Nova 7X commands now flagged as INCORRECT for Nova Pro ───────────────────
+NOVA7X_DISCARDED: list[dict] = [
+    {
+        "name": "idle_timeout_nova7x",
+        "command": "0xA3",
+        "reason": "Nova 7X opcode — Nova Pro uses 0xC1 instead (HeadsetControl confirmed)",
+        "status": "DO_NOT_USE_ON_NOVA_PRO",
+    },
+    {
+        "name": "led_brightness_nova7x",
+        "command": "0xAE",
+        "reason": "Nova 7X LED opcode — Nova Pro uses 0xBF instead (HeadsetControl confirmed)",
+        "status": "DO_NOT_USE_ON_NOVA_PRO",
+    },
+    {
+        "name": "eq_apply_nova7x",
+        "command": "0x27",
+        "reason": "Nova 7X EQ apply — Nova Pro uses 0x2E for preset select (HeadsetControl confirmed)",
+        "status": "DO_NOT_USE_ON_NOVA_PRO",
+    },
+]
+
+# ── Remaining unknowns — still require Wireshark capture ─────────────────────
+NOVA_PRO_UNKNOWNS: list[dict] = [
+    {
+        "type": "unknown_needs_wireshark",
+        "name": "anc_mode_write",
+        "push_event_cmd": "0xBD",
+        "candidate_write_cmd": "0xBD",
+        "candidate_packet": "[0x06, 0xBD, mode, 0x00…]",
+        "candidate_values": {"0": "off", "1": "transparency", "2": "anc"},
+        "notes": "Not in HeadsetControl (Nova Pro specific). Inferred from push event opcode.",
+    },
+    {
+        "type": "unknown_needs_wireshark",
+        "name": "usb_input_switch",
+        "push_event_cmd": "None known",
+        "candidate_write_cmd": "0xC0 or 0xC2",
+        "candidate_packet": "[0x06, 0xC0, input, 0x00…] where input=1 or 2",
+        "notes": "Nova Pro has dual USB inputs (PC port 1/2). Not in HeadsetControl.",
+    },
+    {
+        "type": "unknown_needs_wireshark",
+        "name": "mic_mute_write",
+        "push_event_cmd": "0xBB",
+        "candidate_write_cmd": "0xBB",
+        "candidate_packet": "[0x06, 0xBB, muted, 0x00…] where muted=0/1",
+        "notes": "Physical mute button triggers push event. Software write may use same opcode.",
+    },
+    {
+        "type": "unknown_needs_wireshark",
+        "name": "chatmix_read",
+        "push_event_cmd": "None yet captured",
+        "candidate_write_cmd": "Unknown",
+        "notes": "ChatMix dial exists on Nova Pro. Opcode unknown.",
+    },
+    {
+        "type": "unknown_needs_wireshark",
+        "name": "dual_battery_base_station",
+        "push_event_cmd": "0xB7",
+        "notes": "Current project reads byte[2]=headset, byte[3]=base. HeadsetControl only documents byte[6] for single headset battery. The 0xB7 push event format may differ from the 0xB0 query response.",
     },
 ]
 
@@ -317,12 +446,29 @@ def main() -> None:
     if write_results:
         push_events = mark_confirmed_writes(push_events, write_results)
 
-    write_candidates = list(NOVA7X_CANDIDATES)
+    # Mark HeadsetControl confirmed writes in the probe-write results too
+    hc_confirmed_b1 = {e["command"].lower() for e in HEADSETCONTROL_CONFIRMED}
     if write_results:
-        confirmed_b1 = {r.get("b1", "").lower() for r in write_results if r.get("push_events")}
-        for c in write_candidates:
-            if c.get("command", "").lower() in confirmed_b1:
-                c["write_confirmed"] = True
+        for r in write_results:
+            if r.get("b1", "").lower() in hc_confirmed_b1:
+                r["headsetcontrol_confirmed"] = True
+
+    # Build write_confirmed list = HeadsetControl + any probe-write additions
+    write_confirmed_list = list(HEADSETCONTROL_CONFIRMED)
+    if write_results:
+        probe_confirmed_b1 = {r.get("b1", "").lower() for r in write_results if r.get("push_events")}
+        extra_b1 = probe_confirmed_b1 - hc_confirmed_b1
+        for b1 in extra_b1:
+            matching = [r for r in write_results if r.get("b1", "").lower() == b1 and r.get("push_events")]
+            if matching:
+                write_confirmed_list.append({
+                    "type": "write_confirmed",
+                    "source": "probe-write.py verified",
+                    "command": matching[0]["b1"],
+                    "label": matching[0].get("label", ""),
+                    "push_events_observed": matching[0].get("push_events", []),
+                    "write_confirmed": True,
+                })
 
     read_queries = extract_confirmed_reads(read_results)
     wireshark_commands = extract_wireshark_commands(ws_data)
@@ -334,45 +480,61 @@ def main() -> None:
             "product_ids": {
                 "0x12CB": "dongle variant A",
                 "0x12CD": "dongle variant B",
-                "0x12E0": "Nova Pro Wireless",
-                "0x12E5": "Nova Pro Wireless X",
+                "0x12E0": "Nova Pro Wireless (base station) [HeadsetControl primary PID]",
+                "0x12E5": "Nova Pro Wireless X [HeadsetControl secondary PID]",
                 "0x225D": "base station / wired",
             },
             "event_interface": 4,
             "event_report_ids": ["0x06", "0x07"],
-            "control_interface_hint": "3 or 4 — confirm with probe-read.py results",
-            "packet_size": 64,
+            "write_report_id": "0x06",
+            "native_packet_size_bytes": 31,
+            "test_packet_size_bytes": 64,
+            "sources": [
+                "Current project baseStationEvents.ts (push event decoding)",
+                "cheahkhing/arctis-headset-hid (Nova 7X reference)",
+                "Sapd/HeadsetControl nova_pro_wireless.hpp (Nova Pro confirmed)",
+            ],
             "notes": [
-                "All packets padded to 64 bytes with 0x00.",
-                "Write commands: [report_id, opcode, value, 0x00…×61]",
-                "Push events are polled at 120ms interval in the current project.",
-                "write_confirmed=true means probe-write.py observed a push event response.",
+                "Write commands use report_id=0x06 as byte[0] — NOT 0x00.",
+                "Native packet size is 31 bytes. Padding to 64 is safe for testing.",
+                "Write format: [0x06, opcode, value, 0x00…] padded to packet size.",
+                "Push events polled at 120ms in current project.",
+                "Battery query 0xB0: resp[6]=headset level(0-8), resp[15]=status.",
+                "Idle timeout opcode 0xC1 uses level INDEX 0-6, not minutes directly.",
+                "LED/OLED write opcode is 0xBF — push event uses 0x85 (different).",
+                "EQ: select preset 4 (custom) via 0x2E before writing bands via 0x33.",
+                "EQ band formula: byte = 0x14 + (2 * gain_dB), range -10 to +10 dB.",
             ],
         },
         "push_events": push_events,
-        "write_candidates": write_candidates,
-        "confirmed_read_queries": read_queries,
+        "write_commands_confirmed": write_confirmed_list,
+        "write_commands_unknown": NOVA_PRO_UNKNOWNS,
+        "read_queries_confirmed_headsetcontrol": HEADSETCONTROL_READ_QUERIES,
+        "read_queries_confirmed_probe": read_queries,
         "wireshark_out_commands": wireshark_commands,
+        "nova7x_commands_not_valid_on_nova_pro": NOVA7X_DISCARDED,
     }
 
     with open(args.out, "w", encoding="utf-8") as f:
         json.dump(command_map, f, indent=2)
 
-    confirmed_writes = sum(1 for e in push_events if e.get("write_confirmed"))
-    confirmed_reads = len(read_queries)
+    confirmed_writes = len(write_confirmed_list)
+    confirmed_reads = len(read_queries) + len(HEADSETCONTROL_READ_QUERIES)
     new_discovered = len(new_events)
     ws_count = len(wireshark_commands)
+    unknowns = len(NOVA_PRO_UNKNOWNS)
 
     print(f"{'=' * 60}")
     print(f"Command map saved to: {args.out}")
     print(f"{'=' * 60}")
-    print(f"  Push events (baseline + discovered): {len(push_events)}")
-    print(f"    - Newly discovered from listen.py : {new_discovered}")
-    print(f"    - Write commands confirmed         : {confirmed_writes}")
-    print(f"  Write candidates (Nova 7X origin)   : {len(write_candidates)}")
-    print(f"    - Confirmed on Nova Pro            : {sum(1 for c in write_candidates if c.get('write_confirmed'))}")
-    print(f"  Read queries confirmed               : {confirmed_reads}")
-    print(f"  Wireshark OUT commands               : {ws_count}")
+    print(f"  Push events (baseline + discovered)  : {len(push_events)}")
+    print(f"    - Newly discovered from listen.py  : {new_discovered}")
+    print(f"  Write commands confirmed              : {confirmed_writes}")
+    print(f"    - HeadsetControl authoritative      : {len(HEADSETCONTROL_CONFIRMED)}")
+    print(f"    - probe-write.py additional         : {confirmed_writes - len(HEADSETCONTROL_CONFIRMED)}")
+    print(f"  Unknown commands (need Wireshark)     : {unknowns}")
+    print(f"  Read queries confirmed                : {confirmed_reads}")
+    print(f"  Wireshark OUT commands                : {ws_count}")
     print()
     print("NEXT STEP → Run validate.cjs to test confirmed commands via the")
     print("  project's node-hid and verify integration with the app state.")

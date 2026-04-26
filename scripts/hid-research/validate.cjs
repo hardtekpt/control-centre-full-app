@@ -75,64 +75,93 @@ function makePacket(b0, b1, extra = []) {
   return pkt;
 }
 
-// ── Test cases (hardcoded known-safe commands) ─────────────────────────────
+// ── Test cases — updated with HeadsetControl confirmed commands ───────────
+// Source: github.com/Sapd/HeadsetControl/blob/master/lib/devices/steelseries_arctis_nova_pro_wireless.hpp
+// Key facts:
+//   - Report ID byte0 = 0x06 (NOT 0x00) for all Nova Pro write commands
+//   - Native packet size = 31 bytes (padded to PACKET_SIZE here)
+//   - 0xBF = lights/OLED (not 0xAE or 0x85)
+//   - 0xC1 = idle timeout (not 0xA3), values are level indices 0–6
+//   - 0x2E = EQ preset select (presets 0–3, custom = 4)
+//   - 0x33 = EQ bands (10 bytes: 0x14 + 2*gain_dB)
+//   - 0x09 = save to flash
 const TEST_GROUPS = [
   {
     name: "sidetone",
-    description: "Sidetone write via 0x39, confirm push event matches",
+    description: "★ HeadsetControl confirmed: [0x06, 0x39, level] level 0–3",
     expectedPushCmd: 0x39,
     commands: [
-      { b0: 0x00, b1: 0x39, extra: [0x00], label: "sidetone OFF" },
-      { b0: 0x00, b1: 0x39, extra: [0x01], label: "sidetone LOW" },
-      { b0: 0x00, b1: 0x39, extra: [0x00], label: "sidetone OFF (restore)" },
-    ],
-  },
-  {
-    name: "anc_mode",
-    description: "ANC mode write via 0xBD, confirm push event matches",
-    expectedPushCmd: 0xBD,
-    commands: [
-      { b0: 0x00, b1: 0xBD, extra: [0x00], label: "ANC OFF" },
-      { b0: 0x00, b1: 0xBD, extra: [0x01], label: "TRANSPARENCY" },
-      { b0: 0x00, b1: 0xBD, extra: [0x00], label: "ANC OFF (restore)" },
+      { b0: 0x06, b1: 0x39, extra: [0x00], label: "sidetone OFF (level 0)" },
+      { b0: 0x06, b1: 0x39, extra: [0x01], label: "sidetone LOW (level 1)" },
+      { b0: 0x06, b1: 0x39, extra: [0x00], label: "sidetone OFF (restore)" },
     ],
   },
   {
     name: "oled_brightness",
-    description: "OLED brightness write, try 0xAE (Nova 7X) and 0x85",
+    description: "★ HeadsetControl confirmed: [0x06, 0xBF, strength] strength 1–10",
     expectedPushCmd: 0x85,
     commands: [
-      { b0: 0x00, b1: 0xAE, extra: [0x02], label: "brightness 2 via 0xAE" },
-      { b0: 0x00, b1: 0x85, extra: [0x05], label: "brightness 5 via 0x85" },
-      { b0: 0x00, b1: 0xAE, extra: [0x02], label: "restore via 0xAE" },
-    ],
-  },
-  {
-    name: "mic_volume",
-    description: "Mic volume write via 0x37",
-    expectedPushCmd: null,
-    commands: [
-      { b0: 0x00, b1: 0x37, extra: [0x05], label: "mic vol 5" },
-      { b0: 0x00, b1: 0x37, extra: [0x03], label: "mic vol 3 (restore)" },
-    ],
-  },
-  {
-    name: "volume_limiter",
-    description: "Volume limiter toggle via 0x3A",
-    expectedPushCmd: null,
-    commands: [
-      { b0: 0x00, b1: 0x3A, extra: [0x00], label: "limiter OFF" },
-      { b0: 0x00, b1: 0x3A, extra: [0x01], label: "limiter ON" },
-      { b0: 0x00, b1: 0x3A, extra: [0x00], label: "limiter OFF (restore)" },
+      { b0: 0x06, b1: 0xBF, extra: [0x01], label: "brightness 1 (min) via 0xBF" },
+      { b0: 0x06, b1: 0xBF, extra: [0x05], label: "brightness 5 (mid) via 0xBF" },
+      { b0: 0x06, b1: 0xBF, extra: [0x01], label: "brightness 1 (restore)" },
     ],
   },
   {
     name: "idle_timeout",
-    description: "Idle timeout via 0xA3 (minutes)",
+    description: "★ HeadsetControl confirmed: [0x06, 0xC1, level] levels 0–6 = [disabled,1,5,10,15,30,60 min]",
     expectedPushCmd: null,
     commands: [
-      { b0: 0x00, b1: 0xA3, extra: [0x0A], label: "timeout 10min" },
-      { b0: 0x00, b1: 0xA3, extra: [0x0A], label: "timeout 10min (restore)" },
+      { b0: 0x06, b1: 0xC1, extra: [0x03], label: "10 min (level 3)" },
+      { b0: 0x06, b1: 0xC1, extra: [0x05], label: "30 min (level 5)" },
+      { b0: 0x06, b1: 0xC1, extra: [0x03], label: "10 min (restore, level 3)" },
+    ],
+  },
+  {
+    name: "eq_preset",
+    description: "★ HeadsetControl confirmed: [0x06, 0x2E, preset] presets 0–3, custom=4",
+    expectedPushCmd: null,
+    commands: [
+      { b0: 0x06, b1: 0x2E, extra: [0x04], label: "select custom preset (4)" },
+      { b0: 0x06, b1: 0x2E, extra: [0x00], label: "select preset 0 (restore)" },
+    ],
+  },
+  {
+    name: "eq_bands",
+    description: "★ HeadsetControl confirmed: [0x06, 0x33, band×10] formula: 0x14 + 2*gain_dB",
+    expectedPushCmd: null,
+    commands: [
+      // Must select custom preset first (eq_preset group above)
+      { b0: 0x06, b1: 0x33, extra: [0x14,0x14,0x14,0x14,0x14,0x14,0x14,0x14,0x14,0x14], label: "flat EQ (all 0 dB)" },
+      { b0: 0x06, b1: 0x09, extra: [], label: "save to flash after EQ write" },
+      { b0: 0x06, b1: 0x33, extra: [0x14,0x14,0x14,0x14,0x14,0x14,0x14,0x14,0x14,0x14], label: "flat EQ (restore)" },
+      { b0: 0x06, b1: 0x09, extra: [], label: "save to flash (restore)" },
+    ],
+  },
+  {
+    name: "anc_mode",
+    description: "Nova Pro specific — not in HeadsetControl. Candidate: [0x06, 0xBD, mode] 0=off,1=transparency,2=ANC",
+    expectedPushCmd: 0xBD,
+    commands: [
+      { b0: 0x06, b1: 0xBD, extra: [0x00], label: "ANC OFF" },
+      { b0: 0x06, b1: 0xBD, extra: [0x01], label: "TRANSPARENCY" },
+      { b0: 0x06, b1: 0xBD, extra: [0x00], label: "ANC OFF (restore)" },
+    ],
+  },
+  {
+    name: "mic_volume",
+    description: "Nova 7X origin, report ID corrected to 0x06: [0x06, 0x37, level] level 0–7",
+    expectedPushCmd: null,
+    commands: [
+      { b0: 0x06, b1: 0x37, extra: [0x05], label: "mic vol 5" },
+      { b0: 0x06, b1: 0x37, extra: [0x03], label: "mic vol 3 (restore)" },
+    ],
+  },
+  {
+    name: "battery_query",
+    description: "★ HeadsetControl confirmed: [0x06, 0xB0] read — resp[6]=level(0-8), resp[15]=status",
+    expectedPushCmd: null,
+    commands: [
+      { b0: 0x06, b1: 0xB0, extra: [], label: "battery query — observe full response" },
     ],
   },
 ];

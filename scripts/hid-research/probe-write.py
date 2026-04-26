@@ -60,125 +60,146 @@ class WriteCommand:
 # The second byte is the command opcode.
 
 COMMAND_GROUPS: list[WriteCommand] = [
+    # ── HeadsetControl CONFIRMED commands for Nova Pro Wireless ────────────────
+    # All use report ID 0x06 as byte0. Packet size on device is 31 bytes.
+    # Padding to PACKET_SIZE (64) with zeros is safe for testing.
     WriteCommand(
         name="sidetone",
-        description="Sidetone level — how much mic audio you hear in the headset.\n"
-                    "Nova 7X command 0x39, values 0–3.\n"
-                    "A successful write should emit a push event with command 0x39.",
+        description="★ CONFIRMED by HeadsetControl (nova_pro_wireless.hpp)\n"
+                    "Sidetone level — how much mic audio you hear in the headset.\n"
+                    "Opcode 0x39, values 0–3. Report ID byte0=0x06.\n"
+                    "Expected push event: cmd 0x39 in data[1].",
         expected_push_event="sidetone_level (cmd 0x39)",
         variants=[
-            (0x00, 0x39, [0x00], "sidetone OFF"),
-            (0x00, 0x39, [0x01], "sidetone LOW"),
-            (0x00, 0x39, [0x02], "sidetone MEDIUM"),
-            (0x00, 0x39, [0x03], "sidetone HIGH"),
+            (0x06, 0x39, [0x00], "★ sidetone OFF  [HeadsetControl: level 0]"),
+            (0x06, 0x39, [0x01], "★ sidetone LOW  [HeadsetControl: level 1, input ≤42]"),
+            (0x06, 0x39, [0x02], "★ sidetone MED  [HeadsetControl: level 2, input ≤85]"),
+            (0x06, 0x39, [0x03], "★ sidetone HIGH [HeadsetControl: level 3, input >85]"),
         ],
     ),
     WriteCommand(
-        name="mic_volume",
-        description="Microphone input volume, 0–7 discrete steps.\n"
-                    "Nova 7X command 0x37.\n"
-                    "Watch for a push event reporting mic volume change.",
-        expected_push_event="mic volume change event",
+        name="oled_brightness",
+        description="★ CONFIRMED by HeadsetControl (nova_pro_wireless.hpp)\n"
+                    "LED/OLED brightness. Opcode 0xBF (NOT 0xAE or 0x85). Report ID byte0=0x06.\n"
+                    "Strength range 1–10 (maps bool on/off to LED strength).\n"
+                    "Push event may use cmd 0x85 (different opcode from write).",
+        expected_push_event="oled_brightness (cmd 0x85)",
         variants=[
-            (0x00, 0x37, [0x00], "mic vol 0 (silent)"),
-            (0x00, 0x37, [0x03], "mic vol 3 (mid)"),
-            (0x00, 0x37, [0x07], "mic vol 7 (max)"),
-            (0x00, 0x37, [0x05], "mic vol 5 (restore comfortable)"),
-        ],
-    ),
-    WriteCommand(
-        name="volume_limiter",
-        description="Volume limiter / hearing protection toggle (on/off).\n"
-                    "Nova 7X command 0x3A, values 0 or 1.",
-        expected_push_event="volume limiter change event",
-        variants=[
-            (0x00, 0x3A, [0x00], "limiter OFF"),
-            (0x00, 0x3A, [0x01], "limiter ON"),
-            (0x00, 0x3A, [0x00], "limiter OFF (restore)"),
+            (0x06, 0xBF, [0x01], "★ OLED brightness 1 (min) via 0xBF [HeadsetControl]"),
+            (0x06, 0xBF, [0x05], "★ OLED brightness 5 (mid) via 0xBF [HeadsetControl]"),
+            (0x06, 0xBF, [0x0A], "★ OLED brightness 10 (max) via 0xBF [HeadsetControl]"),
+            (0x06, 0xBF, [0x05], "★ OLED brightness 5 (restore) via 0xBF"),
+            # Cross-check — does write 0x85 also work?
+            (0x06, 0x85, [0x05], "  alt: OLED via 0x85 (push event opcode — unlikely write)"),
         ],
     ),
     WriteCommand(
         name="idle_timeout",
-        description="Auto-off idle timeout in minutes (0 = disabled).\n"
-                    "Nova 7X command 0xA3, values 0–90.",
+        description="★ CONFIRMED by HeadsetControl (nova_pro_wireless.hpp)\n"
+                    "Auto-off idle timeout. Opcode 0xC1 (NOT 0xA3). Report ID byte0=0x06.\n"
+                    "Values are level indices 0–6 mapping to [disabled,1,5,10,15,30,60] min.",
         expected_push_event="idle timeout change event",
         variants=[
-            (0x00, 0xA3, [0x00], "timeout DISABLED"),
-            (0x00, 0xA3, [0x0A], "timeout 10 min"),
-            (0x00, 0xA3, [0x1E], "timeout 30 min"),
-            (0x00, 0xA3, [0x0A], "timeout 10 min (restore)"),
+            (0x06, 0xC1, [0x00], "★ timeout DISABLED        [HeadsetControl level 0]"),
+            (0x06, 0xC1, [0x01], "★ timeout 1 min           [HeadsetControl level 1]"),
+            (0x06, 0xC1, [0x03], "★ timeout 10 min          [HeadsetControl level 3]"),
+            (0x06, 0xC1, [0x05], "★ timeout 30 min          [HeadsetControl level 5]"),
+            (0x06, 0xC1, [0x03], "★ timeout 10 min (restore)[HeadsetControl level 3]"),
         ],
     ),
     WriteCommand(
-        name="led_brightness",
-        description="LED/OLED brightness, 0–3 levels.\n"
-                    "Nova 7X command 0xAE.  Nova Pro may use the same or 0x85.\n"
-                    "Also try 0x85 as a candidate for the OLED (Nova Pro specific).\n"
-                    "A successful write should emit a push event with command 0x85.",
-        expected_push_event="oled_brightness (cmd 0x85)",
+        name="eq_preset",
+        description="★ CONFIRMED by HeadsetControl (nova_pro_wireless.hpp)\n"
+                    "EQ preset selection. Opcode 0x2E. Report ID byte0=0x06.\n"
+                    "Presets 0–3 are factory; preset 4 = custom (must select before writing bands).",
+        expected_push_event="EQ preset event",
         variants=[
-            # Try Nova 7X command first
-            (0x00, 0xAE, [0x00], "brightness 0 (off) via 0xAE"),
-            (0x00, 0xAE, [0x01], "brightness 1 (low) via 0xAE"),
-            (0x00, 0xAE, [0x02], "brightness 2 (med) via 0xAE"),
-            (0x00, 0xAE, [0x03], "brightness 3 (high) via 0xAE"),
-            # Try Nova Pro candidate
-            (0x00, 0x85, [0x05], "OLED brightness 5 via 0x85"),
-            (0x00, 0x85, [0x0A], "OLED brightness 10 via 0x85"),
-            # Restore
-            (0x00, 0xAE, [0x02], "brightness restore via 0xAE"),
+            (0x06, 0x2E, [0x00], "★ EQ preset 0 [HeadsetControl]"),
+            (0x06, 0x2E, [0x01], "★ EQ preset 1 [HeadsetControl]"),
+            (0x06, 0x2E, [0x04], "★ EQ preset 4 (custom) [HeadsetControl — required before eq_bands]"),
+            (0x06, 0x2E, [0x00], "★ EQ preset 0 (restore)"),
         ],
     ),
+    WriteCommand(
+        name="eq_bands",
+        description="★ CONFIRMED by HeadsetControl (nova_pro_wireless.hpp)\n"
+                    "Write 10-band EQ. Opcode 0x33. Report ID byte0=0x06.\n"
+                    "Formula: band_byte = 0x14 + (2 * gain_dB) for gain -10.0 to +10.0 dB.\n"
+                    "0x14 = flat (0 dB). Must select preset 4 (custom) first via eq_preset group.\n"
+                    "After writing bands, send save command (eq_save group) to persist.",
+        expected_push_event="EQ bands event",
+        variants=[
+            # Flat EQ: all bands = 0x14 (baseline = 0 dB)
+            (0x06, 0x33, [0x14]*10, "★ EQ flat (all bands 0 dB) [HeadsetControl formula verified]"),
+            # Bass boost: band 0 (+4dB=0x1C), band 1 (+2dB=0x18), rest flat
+            (0x06, 0x33, [0x1C, 0x18, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14], "★ EQ bass boost test"),
+            # Restore flat
+            (0x06, 0x33, [0x14]*10, "★ EQ flat (restore)"),
+        ],
+    ),
+    WriteCommand(
+        name="eq_save",
+        description="★ CONFIRMED by HeadsetControl (nova_pro_wireless.hpp)\n"
+                    "Persist current EQ/settings to device flash. Opcode 0x09. Report ID byte0=0x06.\n"
+                    "Send after eq_bands to make settings survive power cycle.",
+        expected_push_event="save ack event",
+        variants=[
+            (0x06, 0x09, [], "★ SAVE to flash [HeadsetControl]"),
+        ],
+    ),
+    # ── Nova Pro specific — not in HeadsetControl ─────────────────────────────
     WriteCommand(
         name="anc_mode",
-        description="ANC (Active Noise Cancellation) mode — Nova Pro specific feature.\n"
-                    "Not present on Nova 7X.  Guessed opcodes based on push event 0xBD.\n"
-                    "Values: 0=off, 1=transparency, 2=ANC.",
+        description="Nova Pro SPECIFIC — not in HeadsetControl.\n"
+                    "ANC mode. Opcode inferred from push event 0xBD. Report ID byte0=0x06.\n"
+                    "Values: 0=off, 1=transparency, 2=ANC. Requires Wireshark confirmation.",
         expected_push_event="anc_mode (cmd 0xBD)",
         variants=[
-            (0x00, 0xBD, [0x00], "ANC OFF"),
-            (0x00, 0xBD, [0x01], "TRANSPARENCY"),
-            (0x00, 0xBD, [0x02], "ANC ON"),
-            (0x00, 0xBD, [0x00], "ANC OFF (restore)"),
-            # Alt opcode candidates
-            (0x00, 0xBC, [0x00], "ANC OFF via 0xBC"),
-            (0x00, 0xBC, [0x01], "TRANSPARENCY via 0xBC"),
-            (0x00, 0xBC, [0x02], "ANC ON via 0xBC"),
+            (0x06, 0xBD, [0x00], "ANC OFF   [candidate — inferred from push event]"),
+            (0x06, 0xBD, [0x01], "TRANSPARENCY [candidate]"),
+            (0x06, 0xBD, [0x02], "ANC ON    [candidate]"),
+            (0x06, 0xBD, [0x00], "ANC OFF   (restore)"),
+            # Alt candidates
+            (0x06, 0xBC, [0x00], "ANC OFF via 0xBC [alt candidate]"),
+            (0x06, 0xBC, [0x01], "TRANSPARENCY via 0xBC"),
+            (0x06, 0xBC, [0x02], "ANC ON via 0xBC"),
         ],
     ),
     WriteCommand(
         name="mic_mute",
-        description="Microphone mute toggle.\n"
-                    "Push event uses cmd 0xBB (0=unmuted, 1=muted).\n"
-                    "Try the same opcode as a write command.",
+        description="Nova Pro SPECIFIC — not in HeadsetControl.\n"
+                    "Software mic mute. Push event uses cmd 0xBB. Report ID byte0=0x06.\n"
+                    "Physical mute button triggers 0xBB push event. Write may use same opcode.",
         expected_push_event="mic_mute (cmd 0xBB)",
         variants=[
-            (0x00, 0xBB, [0x00], "mic UNMUTE"),
-            (0x00, 0xBB, [0x01], "mic MUTE"),
-            (0x00, 0xBB, [0x00], "mic UNMUTE (restore)"),
-        ],
-    ),
-    WriteCommand(
-        name="eq_activate",
-        description="Apply/activate EQ preset (Nova 7X uses 0x27 = apply, 0x09 = save to flash).\n"
-                    "Profile: 0x00 = 2.4GHz wireless, 0x01 = Bluetooth.",
-        expected_push_event="EQ activation event",
-        variants=[
-            (0x00, 0x27, [0x00], "EQ apply wireless profile"),
-            (0x00, 0x27, [0x01], "EQ apply Bluetooth profile"),
+            (0x06, 0xBB, [0x00], "mic UNMUTE [candidate]"),
+            (0x06, 0xBB, [0x01], "mic MUTE   [candidate]"),
+            (0x06, 0xBB, [0x00], "mic UNMUTE (restore)"),
         ],
     ),
     WriteCommand(
         name="usb_input",
-        description="USB input switch (PC has two USB inputs: 1 or 2).\n"
-                    "Nova Pro specific — no equivalent on Nova 7X.\n"
-                    "Opcode unknown — testing candidates.",
+        description="Nova Pro SPECIFIC — not in HeadsetControl.\n"
+                    "USB input switch (PC has two USB inputs: 1 or 2).\n"
+                    "Opcode unknown — testing candidates based on 0xC1 space (confirmed idle timeout).",
         expected_push_event="USB input change event",
         variants=[
-            (0x00, 0xC0, [0x01], "USB input 1 via 0xC0"),
-            (0x00, 0xC0, [0x02], "USB input 2 via 0xC0"),
-            (0x00, 0xC1, [0x01], "USB input 1 via 0xC1"),
-            (0x00, 0xC1, [0x02], "USB input 2 via 0xC1"),
+            (0x06, 0xC0, [0x01], "USB input 1 via 0xC0 [candidate]"),
+            (0x06, 0xC0, [0x02], "USB input 2 via 0xC0 [candidate]"),
+            (0x06, 0xC2, [0x01], "USB input 1 via 0xC2 [candidate]"),
+            (0x06, 0xC2, [0x02], "USB input 2 via 0xC2 [candidate]"),
+        ],
+    ),
+    WriteCommand(
+        name="mic_volume",
+        description="Nova 7X command 0x37 (unconfirmed on Nova Pro).\n"
+                    "Now using correct report ID byte0=0x06.\n"
+                    "Watch for a push event reporting mic volume change.",
+        expected_push_event="mic volume change event",
+        variants=[
+            (0x06, 0x37, [0x03], "mic vol 3 (mid) via 0x37"),
+            (0x06, 0x37, [0x05], "mic vol 5 via 0x37"),
+            (0x06, 0x37, [0x03], "mic vol 3 (restore)"),
         ],
     ),
 ]

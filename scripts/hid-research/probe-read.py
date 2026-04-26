@@ -39,38 +39,37 @@ NOVA_PRO_PIDS: set[int] = {0x12CB, 0x12CD, 0x12E0, 0x12E5, 0x225D}
 # Byte0 is typically 0x00 (report ID 0 / no-ID prefix).
 # Byte1 is the command.
 CANDIDATE_READS: list[tuple[int, int, str]] = [
-    # Nova 7X confirmed commands (most likely to work on Nova Pro too)
-    (0x00, 0xB0, "STATUS — battery, charging, vol, mute"),
-    (0x00, 0xA0, "CONFIG — LED, timeout, sidetone, limiter"),
-    (0x00, 0x20, "MIC — volume, sidetone details"),
-    (0x00, 0x32, "EQ GET params (wireless profile)"),
-    (0x00, 0xA6, "EQ GET preset name"),
-    # Byte patterns seen in current project push events — try as polled queries
-    (0x00, 0x25, "VOLUME query"),
-    (0x00, 0xB5, "CONNECTION state query"),
-    (0x00, 0xB7, "BATTERY levels query"),
-    (0x00, 0x85, "OLED BRIGHTNESS query"),
-    (0x00, 0x39, "SIDETONE query"),
-    (0x00, 0xBD, "ANC MODE query"),
-    (0x00, 0xBB, "MIC MUTE query"),
-    # Common SteelSeries pattern variations
-    (0x06, 0xB0, "STATUS (report ID 0x06)"),
-    (0x07, 0xB0, "STATUS (report ID 0x07)"),
-    (0x06, 0xA0, "CONFIG (report ID 0x06)"),
-    (0x06, 0x32, "EQ GET (report ID 0x06)"),
-    # Firmware / device info
-    (0x00, 0x10, "FIRMWARE version"),
-    (0x00, 0x11, "SERIAL number"),
-    (0x00, 0x90, "DEVICE INFO"),
-    (0x00, 0x91, "DEVICE INFO alt"),
-    # ANC / Nova Pro specific guesses
-    (0x00, 0xBC, "ANC — query alt"),
-    (0x00, 0xBE, "ANC — query alt 2"),
-    # ChatMix
-    (0x00, 0x45, "CHATMIX query"),
-    # USB input
-    (0x00, 0xC0, "USB INPUT query"),
-    (0x00, 0xC1, "USB INPUT query alt"),
+    # ── HeadsetControl CONFIRMED for Nova Pro Wireless (0x12e0 / 0x12e5) ──────
+    # Report ID 0x06 is confirmed by HeadsetControl for all Nova Pro commands.
+    # Packet size is 31 bytes on the device, padded here to PACKET_SIZE.
+    (0x06, 0xB0, "★ BATTERY/STATUS query [HeadsetControl confirmed] → resp[6]=level(0-8), resp[15]=status(0x01=offline,0x02=charging,0x08=online)"),
+    (0x06, 0x39, "★ SIDETONE query [HeadsetControl confirmed — same opcode as push event]"),
+    (0x06, 0xBF, "★ LIGHTS/OLED query [HeadsetControl confirmed — opcode 0xBF, NOT 0xAE]"),
+    (0x06, 0xC1, "★ INACTIVE TIME query [HeadsetControl confirmed — opcode 0xC1, NOT 0xA3]"),
+    (0x06, 0x2E, "★ EQ PRESET query [HeadsetControl confirmed — opcode 0x2E]"),
+    (0x06, 0x33, "★ EQ PARAMS query [HeadsetControl confirmed — 10 bands, baseline 0x14]"),
+    (0x06, 0x09, "★ SAVE query [HeadsetControl confirmed — persist to flash]"),
+    # ── Nova Pro specific — not in HeadsetControl, infer from push events ──────
+    (0x06, 0xBD, "ANC MODE query [Nova Pro push event cmd — write opcode candidate]"),
+    (0x06, 0xBB, "MIC MUTE query [Nova Pro push event cmd]"),
+    (0x06, 0xB5, "CONNECTION STATE query [Nova Pro push event cmd]"),
+    (0x06, 0xB7, "DUAL BATTERY query [Nova Pro push event cmd]"),
+    (0x06, 0x85, "OLED BRIGHTNESS query [Nova Pro push event cmd — alt to 0xBF]"),
+    (0x06, 0x25, "VOLUME query [Nova Pro push event cmd]"),
+    # ── Unknown Nova Pro features ─────────────────────────────────────────────
+    (0x06, 0xC0, "USB INPUT query [candidate — PCUsbInput 1/2]"),
+    (0x06, 0xBC, "ANC alt query"),
+    (0x06, 0xBE, "ANC alt query 2"),
+    (0x06, 0x45, "CHATMIX query"),
+    # ── Nova 7X commands for comparison (report ID 0x00) ─────────────────────
+    (0x00, 0xB0, "Nova 7X STATUS — compare response format"),
+    (0x00, 0xA0, "Nova 7X CONFIG — compare response format"),
+    (0x00, 0x20, "Nova 7X MIC"),
+    (0x00, 0x32, "Nova 7X EQ GET"),
+    # ── Firmware / device info ────────────────────────────────────────────────
+    (0x06, 0x10, "FIRMWARE version"),
+    (0x06, 0x11, "SERIAL number"),
+    (0x06, 0x90, "DEVICE INFO"),
 ]
 
 PACKET_SIZE = 64
