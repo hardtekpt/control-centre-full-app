@@ -214,7 +214,7 @@ class DeviceManager:
     """Opens all Nova Pro HID interfaces and runs a background reader."""
 
     def __init__(self):
-        self.devices:    dict[int, hid.Device] = {}  # iface_num -> device
+        self.devices:    dict[int, hid.device] = {}  # iface_num -> device
         self.ev_queue:   queue.Queue[HidEvent]  = queue.Queue()
         self._stop:      threading.Event        = threading.Event()
         self._session:   list[str]              = ["idle"]
@@ -230,7 +230,8 @@ class DeviceManager:
         for info in sorted(candidates, key=lambda d: d.get("interface_number", 0)):
             iface = info.get("interface_number", len(self.devices))
             try:
-                dev = hid.Device(path=info["path"])
+                dev = hid.device()
+                dev.open_path(info["path"])
                 self.devices[iface] = dev
                 opened.append(iface)
             except Exception as ex:
@@ -251,7 +252,7 @@ class DeviceManager:
             )
             t.start()
 
-    def _reader_loop(self, iface: int, dev: hid.Device) -> None:
+    def _reader_loop(self, iface: int, dev: hid.device) -> None:
         while not self._stop.is_set():
             try:
                 data = dev.read(PACKET_SIZE, timeout_ms=POLL_TIMEOUT)
