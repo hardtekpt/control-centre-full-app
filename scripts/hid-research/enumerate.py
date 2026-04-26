@@ -15,7 +15,7 @@ import sys
 try:
     import hid
 except ImportError:
-    print("ERROR: 'hid' package not found. Run: pip install hid")
+    print("ERROR: 'hid' package not found. Run: pip install hidapi")
     sys.exit(1)
 
 STEELSERIES_VID = 0x1038
