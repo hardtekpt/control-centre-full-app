@@ -3616,16 +3616,17 @@ function notifyStateChanges(previous: AppState, next: AppState): void {
   // Suppress the ANC notification when it is a side-effect of a wireless connect event:
   // the firmware forces anc_mode "off" in the same HID patch as connected=true, so showing
   // both would immediately overwrite the connectivity notification on the OLED.
-  const ancModeChangedByUser = previous.anc_mode !== next.anc_mode && next.anc_mode != null && !(connectivityChanged && next.connected === true);
-  if (ancModeChangedByUser) {
-    const ancLabel = next.anc_mode === "anc" ? "ANC On" : next.anc_mode === "transparency" ? "Transparency" : "ANC Off";
+  const nextAncMode = next.anc_mode;
+  const ancModeChangedByUser = previous.anc_mode !== nextAncMode && nextAncMode != null && !(connectivityChanged && next.connected === true);
+  if (ancModeChangedByUser && nextAncMode != null) {
+    const ancLabel = nextAncMode === "anc" ? "ANC On" : nextAncMode === "transparency" ? "Transparency" : "ANC Off";
     if (isNotifEnabled("ancMode")) {
-      pushServiceLog("notifications", `[ancMode] ${ancLabel} — OSD sent (mode=${next.anc_mode})`);
-      void showAncModeNotification(next.anc_mode);
+      pushServiceLog("notifications", `[ancMode] ${ancLabel} — OSD sent (mode=${nextAncMode})`);
+      void showAncModeNotification(nextAncMode);
     }
     if (isOledNotifEnabled("ancMode")) {
-      pushServiceLog("notifications", `[ancMode] ${ancLabel} — OLED sent (mode=${next.anc_mode})`);
-      oledNotifService.showTypedNotification("ancMode", ancLabel, next.anc_mode);
+      pushServiceLog("notifications", `[ancMode] ${ancLabel} — OLED sent (mode=${nextAncMode})`);
+      oledNotifService.showTypedNotification("ancMode", ancLabel, nextAncMode);
     }
   }
 
