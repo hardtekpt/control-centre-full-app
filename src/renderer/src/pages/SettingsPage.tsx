@@ -7,6 +7,7 @@ import AutomaticPresetsSettingsTab, { type NewPresetRuleDraft } from "../compone
 import DdcSettingsTab from "../components/settings/DdcSettingsTab";
 import DiscordSettingsTab from "../components/settings/DiscordSettingsTab";
 import GgSonarSettingsTab from "../components/settings/GgSonarSettingsTab";
+import HidSettingsTab from "../components/settings/HidSettingsTab";
 import OledNotificationsSettingsTab from "../components/settings/OledNotificationsSettingsTab";
 import OledDisplaySettingsTab from "../components/settings/OledDisplaySettingsTab";
 import SettingsSidebar from "../components/settings/SettingsSidebar";
@@ -624,6 +625,8 @@ export default function SettingsPage({
         {tab === "discord" && (
           <DiscordSettingsTab settings={settings} serviceStatus={serviceStatus} onUpdate={onUpdate} />
         )}
+
+        {tab === "hid" && <HidSettingsTab />}
 
         {tab === "about" && (
           <>

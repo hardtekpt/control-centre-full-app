@@ -31,6 +31,7 @@ const IPC_INVOKE = {
   DISCORD_GET_VOICE_USERS: "discord:get-voice-users",
   DISCORD_SET_USER_VOLUME: "discord:set-user-volume",
   DISCORD_SET_USER_MUTE: "discord:set-user-mute",
+  HID_GET_INFO: "hid:get-info",
 } as const;
 
 const IPC_SEND = {
@@ -53,6 +54,7 @@ const IPC_EVENT = {
   OPEN_APPS_UPDATE: "open-apps:update",
   DISCORD_VOICE_UPDATE: "discord:voice-update",
   DISCORD_STATE_UPDATE: "discord:state-update",
+  HID_EVENT: "hid:event",
 } as const;
 
 function invoke<C extends InvokeChannel>(channel: C, ...params: InvokeArgs<C>): Promise<InvokeResult<C>> {
@@ -103,6 +105,8 @@ const api: ArctisBridgeApi = {
   setDiscordUserMute: (userId, muted) => invoke(IPC_INVOKE.DISCORD_SET_USER_MUTE, { userId, muted }),
   onDiscordVoiceUpdate: (cb) => subscribe(IPC_EVENT.DISCORD_VOICE_UPDATE, cb),
   onDiscordStateUpdate: (cb) => subscribe(IPC_EVENT.DISCORD_STATE_UPDATE, cb),
+  getHidInfo: () => invoke(IPC_INVOKE.HID_GET_INFO),
+  onHidEvent: (cb) => subscribe(IPC_EVENT.HID_EVENT, cb),
 };
 
 contextBridge.exposeInMainWorld("arctisBridge", api);

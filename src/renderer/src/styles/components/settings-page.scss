@@ -540,3 +540,117 @@
   background: rgba(150, 150, 150, 0.14);
   border-color: rgba(150, 150, 150, 0.28);
 }
+
+// HID tab
+.hid-log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.hid-event-list {
+  max-height: 380px;
+  overflow-y: auto;
+  padding: 4px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.hid-event-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.08);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.78em;
+  flex-wrap: wrap;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.hid-event-ts {
+  opacity: 0.45;
+  flex-shrink: 0;
+  min-width: 88px;
+}
+
+.hid-event-cmd {
+  flex-shrink: 0;
+  min-width: 90px;
+  color: var(--system-accent-medium, #6ab7ff);
+  font-weight: 600;
+}
+
+.hid-event-hex {
+  opacity: 0.72;
+  letter-spacing: 0.02em;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hid-decoded {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.hid-badge {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 0.88em;
+  white-space: nowrap;
+
+  strong {
+    color: #c8e6ff;
+  }
+}
+
+.hid-device-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.08);
+  font-size: 0.82em;
+
+  &:last-of-type {
+    border-bottom: none;
+  }
+}
+
+.hid-device-path {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hid-device-meta {
+  opacity: 0.55;
+  font-size: 0.88em;
+}
+
+.hid-device-empty {
+  font-size: 0.82em;
+  opacity: 0.55;
+  padding: 4px 0;
+}
+
+.hid-hw-meta {
+  font-size: 0.75em;
+  opacity: 0.4;
+  margin-top: 8px;
+  font-family: Consolas, "Courier New", monospace;
+}

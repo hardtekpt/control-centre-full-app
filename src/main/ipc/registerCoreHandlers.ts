@@ -7,6 +7,7 @@ import type {
   DiscordVoiceStatePayload,
   ExportSettingsResponse,
   FlyoutPinnedResponse,
+  HidInfoPayload,
   ImportSettingsResponse,
   InitialPayload,
   MixerDataPayload,
@@ -42,6 +43,7 @@ export interface RegisterCoreIpcHandlersDeps {
   getDiscordVoiceUsers: () => DiscordVoiceStatePayload;
   setDiscordUserVolume: (payload: { userId: string; volume: number }) => Promise<BooleanOkResponse>;
   setDiscordUserMute: (payload: { userId: string; muted: boolean }) => Promise<BooleanOkResponse>;
+  getHidInfo: () => HidInfoPayload;
 }
 
 /**
@@ -76,6 +78,7 @@ export function registerCoreIpcHandlers(deps: RegisterCoreIpcHandlersDeps): void
     getDiscordVoiceUsers,
     setDiscordUserVolume,
     setDiscordUserMute,
+    getHidInfo,
   } = deps;
 
   ipcMain.handle(IPC_INVOKE.APP_GET_INITIAL, getInitialPayload);
@@ -109,4 +112,6 @@ export function registerCoreIpcHandlers(deps: RegisterCoreIpcHandlersDeps): void
   ipcMain.handle(IPC_INVOKE.DISCORD_GET_VOICE_USERS, () => getDiscordVoiceUsers());
   ipcMain.handle(IPC_INVOKE.DISCORD_SET_USER_VOLUME, (_event, payload: { userId: string; volume: number }) => setDiscordUserVolume(payload));
   ipcMain.handle(IPC_INVOKE.DISCORD_SET_USER_MUTE, (_event, payload: { userId: string; muted: boolean }) => setDiscordUserMute(payload));
+
+  ipcMain.handle(IPC_INVOKE.HID_GET_INFO, () => getHidInfo());
 }
