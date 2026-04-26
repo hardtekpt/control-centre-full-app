@@ -10,7 +10,7 @@ Usage (from project root, inside .venv):
     python scripts/hid-research/discover.py
 
 Requirements:
-    pip install hid colorama
+    pip install hidapi colorama
     GG Engine CLOSED for write sessions (open for GG Engine capture sessions)
 """
 

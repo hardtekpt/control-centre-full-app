@@ -1,2 +1,3 @@
-hid>=1.0.5
+# 'hidapi' (not 'hid') bundles hidapi.dll on Windows — same 'import hid' in code
+hidapi>=0.14.0
 colorama>=0.4.6
