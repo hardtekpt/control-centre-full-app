@@ -5,7 +5,8 @@ import * as path from "node:path";
 import { EventEmitter } from "node:events";
 import type { AppState, BackendCommand, PresetMap } from "../../../../shared/types";
 import { mergeState } from "../../../../shared/settings.js";
-import { BaseStationEventListener } from "./baseStationEvents";
+import { BaseStationEventListener, type BaseStationSnapshot } from "./baseStationEvents";
+import type { HidInfoPayload, HidRawEvent } from "../../../../shared/ipc";
 
 const CHANNELS = ["master", "game", "chatRender", "media", "aux", "chatCapture"] as const;
 type ChannelName = (typeof CHANNELS)[number];
@@ -33,6 +34,7 @@ export class ArctisApiService extends EventEmitter {
   private lastError = "";
   private lastPresetRefresh = 0;
   private baseStationEvents: BaseStationEventListener | null = null;
+  private hidEventBuffer: HidRawEvent[] = [];
   private running = false;
   private sonarEnabled = true;
   private hidEventsEnabled = true;
@@ -70,6 +72,13 @@ export class ArctisApiService extends EventEmitter {
 
   public getPresets(): PresetMap {
     return this.presets;
+  }
+
+  public getHidInfo(): HidInfoPayload {
+    return {
+      devices: this.baseStationEvents?.getOpenedDevices() ?? [],
+      recentEvents: [...this.hidEventBuffer],
+    };
   }
 
   public async refreshNow(): Promise<void> {
@@ -1029,9 +1038,32 @@ export class ArctisApiService extends EventEmitter {
     this.baseStationEvents = new BaseStationEventListener(
       (patch) => this.applyHeadsetEventPatch(patch),
       (detail) => this.emit("hid-status", detail),
+      (data, patch) => this.recordHidEvent(data, patch),
     );
     this.baseStationEvents.start();
     this.emit("hid-status", "HID event listener active.");
+  }
+
+  private recordHidEvent(data: number[], patch: Partial<BaseStationSnapshot> | null): void {
+    const event: HidRawEvent = {
+      timestamp: Date.now(),
+      hex: data.map((b) => b.toString(16).padStart(2, "0").toUpperCase()).join(" "),
+      reportId: data[0] ?? 0,
+      command: data.length >= 2 ? (data[1] ?? null) : null,
+      decoded: patch ? this.patchToDecoded(patch) : null,
+    };
+    this.hidEventBuffer = [event, ...this.hidEventBuffer].slice(0, 200);
+    this.emit("hid-raw-event", event);
+  }
+
+  private patchToDecoded(patch: Record<string, unknown>): Record<string, string | number | boolean> {
+    const result: Record<string, string | number | boolean> = {};
+    for (const [key, value] of Object.entries(patch)) {
+      if (value !== null && value !== undefined && (typeof value === "string" || typeof value === "number" || typeof value === "boolean")) {
+        result[key] = value;
+      }
+    }
+    return result;
   }
 
   private stopHidListener(): void {

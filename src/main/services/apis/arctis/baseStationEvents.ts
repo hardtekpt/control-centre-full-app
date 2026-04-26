@@ -1,4 +1,5 @@
 import type { AppState } from "../../../../shared/types";
+import type { HidDeviceEntry } from "../../../../shared/ipc";
 
 const STEELSERIES_VENDOR_ID = 0x1038;
 const SUPPORTED_PRODUCT_IDS = new Set([0x12CB, 0x12CD, 0x12E0, 0x12E5, 0x225D]);
@@ -41,10 +42,12 @@ export type BaseStationSnapshot = Pick<
 export class BaseStationEventListener {
   private hid: HidModule | null = null;
   private devices: HidHandle[] = [];
+  private openedDeviceEntries: HidDeviceEntry[] = [];
   private timer: NodeJS.Timeout | null = null;
   private lastDiscoverAt = 0;
   private onPatch: (patch: Partial<BaseStationSnapshot>) => void;
   private onError: (detail: string) => void;
+  private onRawEvent: ((data: number[], patch: Partial<BaseStationSnapshot> | null) => void) | null;
   private snapshot: BaseStationSnapshot = {
     headset_battery_percent: null,
     base_battery_percent: null,
@@ -59,9 +62,14 @@ export class BaseStationEventListener {
     oled_brightness: null,
   };
 
-  constructor(onPatch: (patch: Partial<BaseStationSnapshot>) => void, onError: (detail: string) => void) {
+  constructor(
+    onPatch: (patch: Partial<BaseStationSnapshot>) => void,
+    onError: (detail: string) => void,
+    onRawEvent?: (data: number[], patch: Partial<BaseStationSnapshot> | null) => void,
+  ) {
     this.onPatch = onPatch;
     this.onError = onError;
+    this.onRawEvent = onRawEvent ?? null;
   }
 
   public start(): void {
@@ -90,6 +98,10 @@ export class BaseStationEventListener {
     return { ...this.snapshot };
   }
 
+  public getOpenedDevices(): HidDeviceEntry[] {
+    return [...this.openedDeviceEntries];
+  }
+
   private pollOnce(): void {
     if (!this.hid) {
       return;
@@ -116,6 +128,9 @@ export class BaseStationEventListener {
           break;
         }
         const patch = this.parseEvent(report);
+        if (this.onRawEvent) {
+          this.onRawEvent(report, patch);
+        }
         if (!patch) {
           continue;
         }
@@ -145,12 +160,20 @@ export class BaseStationEventListener {
       const ordered = [pathB, pathA];
       this.closeDevices();
       const opened = new Set<string>();
+      this.openedDeviceEntries = [];
       for (const p of ordered) {
         if (opened.has(p)) {
           continue;
         }
         this.devices.push(new this.hid.HID(p));
         opened.add(p);
+        const candidate = candidates.find((c) => c.path === p);
+        this.openedDeviceEntries.push({
+          path: p,
+          vendorId: candidate?.vendorId ?? 0,
+          productId: candidate?.productId ?? 0,
+          interfaceNumber: candidate?.interface ?? 0,
+        });
       }
       this.updateBaseStationConnected(this.devices.length > 0);
     } catch (err) {
@@ -190,6 +213,7 @@ export class BaseStationEventListener {
       }
     }
     this.devices = [];
+    this.openedDeviceEntries = [];
   }
 
   private updateBaseStationConnected(connected: boolean): void {

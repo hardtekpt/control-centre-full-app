@@ -4361,6 +4361,13 @@ function wireBackend(): void {
   backend.on("hid-status", (text: string) => {
     pushServiceLog("hidEvents", text);
   });
+  backend.on("hid-raw-event", (event: unknown) => {
+    for (const win of allWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send(IPC_EVENT.HID_EVENT, event);
+      }
+    }
+  });
   backend.on("state", (state: AppState) => {
     try {
       const previous = cachedState;
@@ -4677,6 +4684,7 @@ function wireIpc(): void {
       await discordRpcService.setUserMute(payload.userId, payload.muted);
       return { ok: true };
     },
+    getHidInfo: () => backend!.getHidInfo(),
   });
 }
 

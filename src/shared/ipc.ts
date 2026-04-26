@@ -3,6 +3,7 @@ import type { AppState, BackendCommand, PresetMap, RunningAppInfo, UiSettings } 
 export const IPC_INVOKE = {
   APP_GET_INITIAL: "app:get-initial",
   SERVICES_GET_STATUS: "services:get-status",
+  HID_GET_INFO: "hid:get-info",
   APP_OPEN_GG: "app:open-gg",
   APP_NOTIFY_CUSTOM: "app:notify-custom",
   MIXER_GET_DATA: "mixer:get-data",
@@ -33,6 +34,7 @@ export const IPC_SEND = {
 
 export const IPC_EVENT = {
   BACKEND_STATE: "backend:state",
+  HID_EVENT: "hid:event",
   BACKEND_PRESETS: "backend:presets",
   BACKEND_STATUS: "backend:status",
   BACKEND_ERROR: "backend:error",
@@ -46,6 +48,26 @@ export const IPC_EVENT = {
 } as const;
 
 export type ServiceLifecycleState = "starting" | "running" | "error" | "stopped";
+
+export interface HidRawEvent {
+  timestamp: number;
+  hex: string;
+  reportId: number;
+  command: number | null;
+  decoded: Record<string, string | number | boolean> | null;
+}
+
+export interface HidDeviceEntry {
+  path: string;
+  vendorId: number;
+  productId: number;
+  interfaceNumber: number;
+}
+
+export interface HidInfoPayload {
+  devices: HidDeviceEntry[];
+  recentEvents: HidRawEvent[];
+}
 
 export interface ThemePayload {
   isDark: boolean;
@@ -200,6 +222,7 @@ export interface InitialPayload {
 export interface IpcInvokeMap {
   [IPC_INVOKE.APP_GET_INITIAL]: { params: []; result: InitialPayload };
   [IPC_INVOKE.SERVICES_GET_STATUS]: { params: []; result: ServiceStatusPayload };
+  [IPC_INVOKE.HID_GET_INFO]: { params: []; result: HidInfoPayload };
   [IPC_INVOKE.APP_OPEN_GG]: { params: []; result: OpenGgResponse };
   [IPC_INVOKE.APP_NOTIFY_CUSTOM]: { params: [{ title: string; body: string }]; result: BooleanOkResponse };
   [IPC_INVOKE.MIXER_GET_DATA]: { params: []; result: MixerDataPayload };
@@ -226,6 +249,7 @@ export type InvokeResult<C extends InvokeChannel> = IpcInvokeMap[C]["result"];
 
 export interface IpcEventPayloadMap {
   [IPC_EVENT.BACKEND_STATE]: AppState;
+  [IPC_EVENT.HID_EVENT]: HidRawEvent;
   [IPC_EVENT.BACKEND_PRESETS]: PresetMap;
   [IPC_EVENT.BACKEND_STATUS]: string;
   [IPC_EVENT.BACKEND_ERROR]: string;
@@ -280,4 +304,6 @@ export interface ArctisBridgeApi {
   setDiscordUserMute(userId: string, muted: boolean): Promise<BooleanOkResponse>;
   onDiscordVoiceUpdate(cb: (p: DiscordVoiceStatePayload) => void): () => void;
   onDiscordStateUpdate(cb: (p: DiscordVoiceStatePayload) => void): () => void;
+  getHidInfo(): Promise<HidInfoPayload>;
+  onHidEvent(cb: (event: HidRawEvent) => void): () => void;
 }
