@@ -29,7 +29,10 @@ export class PresetSwitcherService {
   private openApps: RunningAppInfo[] = [];
   private activeApp: RunningAppInfo | null = null;
   private activeAppsHash = "";
-  private lastAppliedByChannel: Partial<Record<ChannelKey, string>> = {};
+  // appId → channel → preset the service last applied
+  private appliedByService = new Map<string, Map<ChannelKey, string>>();
+  // appId → set of channels where the user manually overrode after the service applied
+  private userOverriddenKeys = new Map<string, Set<ChannelKey>>();
   private pollIntervalMs: number;
   private openAppsPollIntervalMs: number;
 
@@ -68,7 +71,8 @@ export class PresetSwitcherService {
 
   public setRules(next: AutomaticPresetRule[]): void {
     this.rules = next ?? [];
-    this.lastAppliedByChannel = {};
+    this.appliedByService.clear();
+    this.userOverriddenKeys.clear();
     this.emitOpenApps();
     if (this.activeApp) {
       void this.applyRulesForActiveApp(this.activeApp);
@@ -98,12 +102,18 @@ export class PresetSwitcherService {
         this.config.onActiveAppUpdate(this.activeApp);
       }
       if (changed && nextActive) {
-        this.lastAppliedByChannel = {};
         await this.applyRulesForActiveApp(nextActive);
       }
       if (shouldRefreshOpenApps) {
         const nextHash = hashApps(nextApps);
         if (nextHash !== this.activeAppsHash) {
+          const nextAppIds = new Set(nextApps.map((a) => a.id));
+          for (const appId of this.appliedByService.keys()) {
+            if (!nextAppIds.has(appId)) {
+              this.appliedByService.delete(appId);
+              this.userOverriddenKeys.delete(appId);
+            }
+          }
           this.openApps = nextApps;
           this.activeAppsHash = nextHash;
           this.emitOpenApps();
@@ -245,16 +255,33 @@ $apps | ConvertTo-Json -Depth 3 -Compress
       }
       channelTargets[rule.channel] = rule.presetId;
     }
+    const overridden = this.userOverriddenKeys.get(activeApp.id);
+    const applied = this.appliedByService.get(activeApp.id);
     for (const [channel, presetId] of Object.entries(channelTargets) as Array<[ChannelKey, string]>) {
+      if (overridden?.has(channel)) {
+        continue;
+      }
       const current = sanitizePreset(this.config.getCurrentPreset(channel));
-      const signature = `${activeApp.id}:${channel}:${presetId}`;
-      if (current === presetId && this.lastAppliedByChannel[channel] === signature) {
+      const prevApplied = applied?.get(channel);
+      if (prevApplied != null && current !== prevApplied) {
+        // User manually changed away from what the service applied — respect the override
+        let overriddenSet = this.userOverriddenKeys.get(activeApp.id);
+        if (!overriddenSet) {
+          overriddenSet = new Set();
+          this.userOverriddenKeys.set(activeApp.id, overriddenSet);
+        }
+        overriddenSet.add(channel);
         continue;
       }
       if (current !== presetId) {
         this.config.applyPreset(channel, presetId);
       }
-      this.lastAppliedByChannel[channel] = signature;
+      let appliedMap = this.appliedByService.get(activeApp.id);
+      if (!appliedMap) {
+        appliedMap = new Map();
+        this.appliedByService.set(activeApp.id, appliedMap);
+      }
+      appliedMap.set(channel, presetId);
     }
   }
 
