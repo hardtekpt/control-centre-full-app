@@ -53,6 +53,7 @@ export class DiscordRpcService extends EventEmitter {
   private channelId: string | null = null;
   private channelName: string | null = null;
   private clientId = "";
+  private clientSecret = "";
   private savedAccessToken = "";
   private retryTimer: NodeJS.Timeout | null = null;
   private retryCount = 0;
@@ -78,9 +79,12 @@ export class DiscordRpcService extends EventEmitter {
     this.emit("voice-update", this.buildVoiceUserPayloads());
   }
 
-  public configureRuntime(config: { enabled?: boolean; clientId?: string; accessToken?: string }): void {
+  public configureRuntime(config: { enabled?: boolean; clientId?: string; clientSecret?: string; accessToken?: string }): void {
     if (config.clientId != null) {
       this.clientId = config.clientId;
+    }
+    if (config.clientSecret != null) {
+      this.clientSecret = config.clientSecret;
     }
     if (config.accessToken != null) {
       this.savedAccessToken = config.accessToken;
@@ -141,16 +145,53 @@ export class DiscordRpcService extends EventEmitter {
         }
       });
 
-      const loginOpts: { clientId: string; scopes: string[]; redirectUri: string; accessToken?: string } = {
-        clientId: this.clientId,
-        scopes: SCOPES,
-        redirectUri: "http://127.0.0.1",
-      };
-      if (this.savedAccessToken) {
-        loginOpts.accessToken = this.savedAccessToken;
+      // Connect the IPC transport first.
+      await (client as DiscordClient).connect(this.clientId);
+
+      if (this.client !== client) return;
+
+      let accessToken = this.savedAccessToken;
+
+      if (!accessToken) {
+        if (!this.clientSecret) {
+          this.setState("disconnected", "No Client Secret configured — required for first-time authorization");
+          void this.destroyClient();
+          return;
+        }
+        // Authorize: pass redirect_uri so Discord accepts the request.
+        const { code } = await (client as DiscordClient).request("AUTHORIZE", {
+          client_id: this.clientId,
+          scopes: SCOPES,
+          redirect_uri: "http://127.0.0.1",
+        }) as { code: string };
+
+        if (this.client !== client) return;
+
+        // Exchange the code for an access token via Discord's REST API.
+        const nodeFetch = await import("node-fetch") as { default: (url: string, init?: Record<string, unknown>) => Promise<{ ok: boolean; json: () => Promise<Record<string, unknown>> }> };
+        const resp = await nodeFetch.default("https://discord.com/api/oauth2/token", {
+          method: "POST",
+          body: new URLSearchParams({
+            client_id: this.clientId,
+            client_secret: this.clientSecret,
+            code,
+            grant_type: "authorization_code",
+            redirect_uri: "http://127.0.0.1",
+          }).toString(),
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        });
+        const body = await resp.json();
+        if (!resp.ok || typeof body.access_token !== "string") {
+          const errDesc = typeof body.error_description === "string" ? body.error_description : String(body.error ?? "token exchange failed");
+          throw new Error(`OAuth2 error: ${String(body.error ?? "error")}: ${errDesc}`);
+        }
+        accessToken = body.access_token as string;
       }
 
-      await client.login(loginOpts);
+      if (this.client !== client) return;
+
+      // Authenticate with the access token.
+      await (client as DiscordClient).authenticate(accessToken);
 
       if (this.client !== client) {
         // Was stopped while connecting.

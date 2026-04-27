@@ -3941,6 +3941,7 @@ function applyRuntimeServiceSettings(previousSettings: UiSettings | null = null)
   discordRpcService.configureRuntime({
     enabled: settings.services.discordEnabled === true,
     clientId: settings.discord.clientId,
+    clientSecret: settings.discord.clientSecret,
     accessToken: settings.discord.accessToken,
   });
 

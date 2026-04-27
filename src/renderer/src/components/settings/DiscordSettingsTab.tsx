@@ -18,6 +18,7 @@ export default function DiscordSettingsTab({ settings, serviceStatus, onUpdate }
   const discordStatus = serviceStatus.discordRpc;
   const stateLabel = STATE_LABELS[discordStatus.state] ?? discordStatus.state;
   const hasClientId = settings.discord.clientId.trim().length > 0;
+  const hasClientSecret = settings.discord.clientSecret.trim().length > 0;
   const hasToken = settings.discord.accessToken.trim().length > 0;
 
   return (
@@ -46,30 +47,52 @@ export default function DiscordSettingsTab({ settings, serviceStatus, onUpdate }
       <div className="settings-section">
         <div className="settings-section-title">Connection</div>
         <div className="settings-two-col" style={{ marginBottom: 6 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <label style={{ fontSize: "0.84em", opacity: 0.75 }}>Application ID</label>
-            <input
-              className="text-input"
-              type="text"
-              placeholder="e.g. 1234567890123456789"
-              value={settings.discord.clientId}
-              onChange={(event) =>
-                onUpdate({
-                  discord: { ...settings.discord, clientId: event.currentTarget.value },
-                })
-              }
-              style={{ width: "100%" }}
-            />
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <label style={{ fontSize: "0.84em", opacity: 0.75 }}>Application ID</label>
+              <input
+                className="text-input"
+                type="text"
+                placeholder="e.g. 1234567890123456789"
+                value={settings.discord.clientId}
+                onChange={(event) =>
+                  onUpdate({
+                    discord: { ...settings.discord, clientId: event.currentTarget.value },
+                  })
+                }
+                style={{ width: "100%" }}
+              />
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <label style={{ fontSize: "0.84em", opacity: 0.75 }}>Client Secret</label>
+              <input
+                className="text-input"
+                type="password"
+                placeholder="Required for first-time authorization"
+                value={settings.discord.clientSecret}
+                onChange={(event) =>
+                  onUpdate({
+                    discord: { ...settings.discord, clientSecret: event.currentTarget.value },
+                  })
+                }
+                style={{ width: "100%" }}
+              />
+            </div>
             <span style={{ fontSize: "0.78em", opacity: 0.5 }}>
-              Create a free application at discord.com/developers/applications
+              Create a free application at discord.com/developers/applications. Add{" "}
+              <code>http://127.0.0.1</code> as a redirect URI in OAuth2 settings.
             </span>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, justifyContent: "flex-start" }}>
             <button
               className="btn"
-              disabled={!hasClientId}
+              disabled={!hasClientId || (!hasToken && !hasClientSecret)}
               onClick={() => void window.arctisBridge.discordConnect()}
-              title={hasClientId ? "Authorize with Discord" : "Enter an Application ID first"}
+              title={
+                !hasClientId ? "Enter an Application ID first"
+                : !hasToken && !hasClientSecret ? "Enter a Client Secret (required for first-time authorization)"
+                : "Authorize with Discord"
+              }
             >
               Connect
             </button>

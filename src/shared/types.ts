@@ -76,6 +76,7 @@ export interface UiSettings {
   };
   discord: {
     clientId: string;
+    clientSecret: string;
     accessToken: string;
   };
   ddc: {

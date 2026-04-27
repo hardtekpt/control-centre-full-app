@@ -81,6 +81,7 @@ export const DEFAULT_SETTINGS: UiSettings = {
   },
   discord: {
     clientId: "",
+    clientSecret: "",
     accessToken: "",
   },
   ddc: {
@@ -228,6 +229,7 @@ export function mergeSettings(partial?: Partial<UiSettings>): UiSettings {
       ...DEFAULT_SETTINGS.discord,
       ...(partialSanitized.discord ?? {}),
       clientId: String(partialSanitized.discord?.clientId ?? "").trim().slice(0, 64),
+      clientSecret: String(partialSanitized.discord?.clientSecret ?? "").trim().slice(0, 64),
       accessToken: String(partialSanitized.discord?.accessToken ?? "").trim().slice(0, 512),
     },
     ddc: {
